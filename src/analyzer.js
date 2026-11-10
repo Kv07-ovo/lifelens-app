@@ -7,6 +7,9 @@ const fs = require('fs/promises');
 /** 服务没启动 / 模型还没加载好：这类错误不算分析失败，稍后重试 */
 class OfflineError extends Error {}
 
+/** 请求超时：通常是模型太忙，稍后重试即可，不应直接判为失败 */
+class TimeoutError extends Error {}
+
 async function requestJson(url, { method = 'GET', body, apiKey, timeoutMs }) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -26,7 +29,7 @@ async function requestJson(url, { method = 'GET', body, apiKey, timeoutMs }) {
     text = await res.text();
   } catch (err) {
     if (err.name === 'AbortError') {
-      throw new Error(`请求超时（${Math.round(timeoutMs / 1000)} 秒）`);
+      throw new TimeoutError(`请求超时（${Math.round(timeoutMs / 1000)} 秒）`);
     }
     const reason = (err.cause && (err.cause.code || err.cause.message)) || err.message;
     throw new OfflineError(`连接不上本地模型服务（${reason}）`);
@@ -149,4 +152,4 @@ async function analyze(config, images, detectedModel) {
   };
 }
 
-module.exports = { probe, analyze, toSentences, requestJson, OfflineError };
+module.exports = { probe, analyze, toSentences, requestJson, OfflineError, TimeoutError };

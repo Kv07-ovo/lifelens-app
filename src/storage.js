@@ -216,10 +216,13 @@ async function screenshotUsage(dataDir, date) {
  * date 为 YYYY-MM-DD 时只删那一天的，为 null 时删全部。
  * 还在等待分析的截图不删（删了就没法分析了），返回里会报告保留了多少张。
  */
-async function deleteScreenshots(dataDir, date) {
+async function deleteScreenshots(dataDir, date, options = {}) {
+  // options.isQueued(id)：给了就只保留真正还在分析队列里的 pending；不在队列里的是滞留记录
+  //                       （比如模型离线太久被挤出队列），永远不会再被分析，截图一并删掉
+  // options.hourFiles：调用方已经列好的小时文件，避免重复遍历目录
   const root = path.resolve(dataDir) + path.sep;
   const result = { deletedFiles: 0, freedBytes: 0, keptPending: 0 };
-  const files = (await listHourFiles(dataDir)).filter((file) => !date || path.basename(file).startsWith(`${date}_`));
+  const files = (options.hourFiles || (await listHourFiles(dataDir))).filter((file) => !date || path.basename(file).startsWith(`${date}_`));
   for (const file of files) {
     await locked(async () => {
       const data = await readJson(file);
@@ -229,19 +232,31 @@ async function deleteScreenshots(dataDir, date) {
         const images = record.imagePaths || [];
         if (record.imagesDeleted || !images.length) continue;
         if (record.status === 'pending') {
-          result.keptPending += images.length;
-          continue;
+          if (!options.isQueued || options.isQueued(record.id)) {
+            result.keptPending += images.length;
+            continue;
+          }
+          record.status = 'skipped';
+          record.error = '截图过期前没有来得及分析';
+          changed = true;
         }
+        let left = 0; // 这条记录还有几张图留在磁盘上
         for (const image of images) {
           const target = path.resolve(image);
-          if (!target.startsWith(root)) continue; // 只动数据目录里的文件
           const stat = await fs.stat(target).catch(() => null);
-          if (!stat) continue;
+          if (!stat) continue; // 文件本来就不在了
+          if (!target.startsWith(root)) {
+            left += 1; // 只动数据目录里的文件
+            continue;
+          }
           await fs.unlink(target).then(() => {
             result.deletedFiles += 1;
             result.freedBytes += stat.size;
-          }, () => {});
+          }, () => {
+            left += 1; // 删不掉（比如被占用）
+          });
         }
+        if (left) continue; // 还有图没删掉：不标记，下次清理再试
         record.imagesDeleted = true;
         record.imagesDeletedAt = localIso(new Date());
         changed = true;
@@ -255,6 +270,120 @@ async function deleteScreenshots(dataDir, date) {
     for (const day of await fs.readdir(shots).catch(() => [])) await fs.rmdir(path.join(shots, day)).catch(() => {});
   }
   return result;
+}
+
+/**
+ * 删除 [from, to) 这段时间的截屏记录：记录本身（时间、文字总结）和对应的截图文件都删掉。
+ * dryRun 为 true 时只统计不删除，用来在确认框里告诉用户会删多少。
+ */
+async function deleteRange(dataDir, from, to, dryRun) {
+  const root = path.resolve(dataDir) + path.sep;
+  const result = { records: 0, images: 0, ids: [] };
+  const files = (await listHourFiles(dataDir)).filter((file) => {
+    const start = hourFileStart(file);
+    return start + 3600000 > from && start < to;
+  });
+  for (const file of files) {
+    await locked(async () => {
+      const data = await readJson(file);
+      if (!data) return;
+      const keep = [];
+      for (const record of data.records) {
+        const time = new Date(record.timestamp).getTime();
+        if (!(time >= from && time < to)) {
+          keep.push(record);
+          continue;
+        }
+        result.records += 1;
+        result.ids.push(record.id);
+        for (const image of record.imagePaths || []) {
+          const target = path.resolve(image);
+          if (!target.startsWith(root) || !(await fs.stat(target).catch(() => null))) continue;
+          result.images += 1;
+          if (!dryRun) await fs.unlink(target).catch(() => {});
+        }
+      }
+      if (!dryRun && keep.length !== data.records.length) {
+        data.records = keep;
+        await writeJson(file, data);
+      }
+    });
+  }
+  return result;
+}
+
+/**
+ * 自动保留策略：只保留最近 keepDays 天（含今天）的截图，更早的删除。文字记录全部保留。
+ * 还没分析完的截图不删；没有任何记录指向的“孤儿”截图在过期后一并删除。
+ */
+async function pruneScreenshots(dataDir, keepDays, isQueued) {
+  const total = { deletedFiles: 0, freedBytes: 0, keptPending: 0, days: 0 };
+  if (!(keepDays > 0)) return total;
+  let hourFiles = null; // 有过期的日期时才列一次，所有日期共用
+  const limit = new Date();
+  limit.setDate(limit.getDate() - (keepDays - 1));
+  const cutoff = parts(limit).date; // 这一天及之后的保留
+  for (const month of (await fs.readdir(dataDir).catch(() => [])).filter((n) => MONTH_RE.test(n))) {
+    const shots = path.join(dataDir, month, 'screenshots');
+    for (const day of (await fs.readdir(shots).catch(() => [])).filter((n) => /^\d{4}-\d{2}-\d{2}$/.test(n) && n < cutoff)) {
+      hourFiles = hourFiles || (await listHourFiles(dataDir));
+      const result = await deleteScreenshots(dataDir, day, { isQueued, hourFiles });
+      total.deletedFiles += result.deletedFiles;
+      total.freedBytes += result.freedBytes;
+      total.keptPending += result.keptPending;
+      total.days += 1;
+
+      // 剩下的文件里，除了还在等待分析的，都是没有记录指向的孤儿
+      const keep = new Set();
+      for (const file of hourFiles.filter((f) => path.basename(f).startsWith(`${day}_`))) {
+        const data = await locked(() => readJson(file));
+        for (const record of (data && data.records) || []) {
+          if (!record.imagesDeleted) for (const image of record.imagePaths || []) keep.add(path.resolve(image));
+        }
+      }
+      const dir = path.join(shots, day);
+      for (const name of await fs.readdir(dir).catch(() => [])) {
+        const target = path.join(dir, name);
+        if (keep.has(path.resolve(target))) continue;
+        const stat = await fs.stat(target).catch(() => null);
+        if (!stat || !stat.isFile()) continue;
+        await fs.unlink(target).then(() => {
+          total.deletedFiles += 1;
+          total.freedBytes += stat.size;
+        }, () => {});
+      }
+      await fs.rmdir(dir).catch(() => {});
+    }
+  }
+  return total;
+}
+
+/**
+ * 重试失败项：把最近 maxFiles 个小时文件里“分析失败”且截图还在的记录改回等待分析，
+ * 返回这些任务（从旧到新，最多 limit 条），由调用方放回分析队列。
+ */
+async function requeueFailed(dataDir, limit, maxFiles = 72) {
+  const jobs = [];
+  const exists = (file) => fs.stat(file).then(() => true, () => false);
+  for (const file of (await listHourFiles(dataDir)).slice(0, maxFiles)) {
+    if (jobs.length >= limit) break;
+    await locked(async () => {
+      const data = await readJson(file);
+      if (!data) return;
+      let changed = false;
+      for (let i = data.records.length - 1; i >= 0 && jobs.length < limit; i--) {
+        const record = data.records[i];
+        if (record.status !== 'error' || record.imagesDeleted || !Array.isArray(record.screens) || !record.screens.length) continue;
+        if (!(await Promise.all(record.screens.map((s) => exists(s.imagePath)))).every(Boolean)) continue;
+        record.status = 'pending';
+        record.error = null;
+        changed = true;
+        jobs.push({ file, id: record.id, images: record.screens.map((s) => ({ path: s.imagePath, active: !!s.active })) });
+      }
+      if (changed) await writeJson(file, data);
+    });
+  }
+  return jobs.reverse();
 }
 
 /** 读一个小时文件（与写入串行，不会读到写了一半的内容） */
@@ -276,6 +405,9 @@ module.exports = {
   hourFileStart,
   screenshotUsage,
   deleteScreenshots,
+  pruneScreenshots,
+  deleteRange,
+  requeueFailed,
   listHourFiles,
   saveScreenshot,
   appendRecord,

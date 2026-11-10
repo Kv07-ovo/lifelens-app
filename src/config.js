@@ -12,7 +12,9 @@ const DEFAULTS = {
   dataDir: '',                // 数据目录，留空 = 文档\LifeLens
   autoStart: true,            // 启动应用后自动开始截屏
   skipWhenLocked: true,       // 锁屏时不截屏
-  maxWidth: 1920,             // 每块屏幕图片的最大宽度（像素），0 = 原始分辨率
+  idleSkipSec: 120,           // 这么多秒没有键鼠操作、且画面没变，就认为人不在，不记录；0 = 关闭
+  keepScreenshotDays: 3,      // 截图只保留最近几天（含今天），更早的自动删除，文字记录保留；0 = 不自动删除
+  maxWidth: 1920,            // 每块屏幕图片的最大宽度（像素），0 = 原始分辨率
   jpegQuality: 80,            // JPEG 质量 30-100
   analysisEnabled: true,      // 是否调用本地模型分析
   baseUrl: 'http://127.0.0.1:8080/v1', // Strata 的 OpenAI 兼容接口
@@ -45,6 +47,8 @@ function clamp(value, min, max, fallback) {
 function normalize(raw) {
   const c = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
   c.intervalSec = clamp(c.intervalSec, 5, 3600, DEFAULTS.intervalSec);
+  c.keepScreenshotDays = clamp(c.keepScreenshotDays, 0, 3650, DEFAULTS.keepScreenshotDays);
+  c.idleSkipSec = clamp(c.idleSkipSec, 0, 3600, DEFAULTS.idleSkipSec);
   c.maxWidth = clamp(c.maxWidth, 0, 7680, DEFAULTS.maxWidth);
   if (c.maxWidth > 0 && c.maxWidth < 640) c.maxWidth = 640;
   c.jpegQuality = clamp(c.jpegQuality, 30, 100, DEFAULTS.jpegQuality);

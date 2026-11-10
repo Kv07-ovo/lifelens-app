@@ -373,6 +373,22 @@ textarea { resize: vertical; }
   border-color: rgba(190, 255, 240, 0.7);
 }
 
+.tag.danger { margin-left: auto; color: var(--bad); border-color: rgba(255, 196, 196, 0.35); }
+.tag.danger:hover { background: var(--bad-bg); }
+
+/* 顶栏里的下拉菜单（暂停一会儿、删除最近…），外观和按钮一致 */
+select.menu {
+  padding: 6px 12px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--glass-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 4px 14px rgba(0, 22, 30, 0.2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+select.menu option { background: #0e3d44; color: #fff; }
+
 /* 筛选栏 */
 .filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; padding: 12px 18px 14px; border-radius: 22px; flex: none; }
 .filters label { margin: 0; font-size: 12.5px; color: var(--muted); }

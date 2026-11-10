@@ -83,7 +83,7 @@ function buildDashboard(lightRange, period, anchor) {
   const range = periodRange(period, anchor);
   const infos = lightRange(range.start, range.end);
   const previous = periodRange(period, shiftAnchor(period, anchor, -1));
-  const previousMinutes = lightRange(previous.start, previous.end).length * SLOT_MIN;
+  const previousMinutes = Math.round(lightRange(previous.start, previous.end).reduce((sum, info) => sum + info.minutes, 0));
 
   const byCategory = emptyCategories();
   const trend = range.buckets.map((b) => ({ ...b, total: 0, ...emptyCategories() }));
@@ -105,20 +105,20 @@ function buildDashboard(lightRange, period, anchor) {
     const when = new Date(info.start);
     const category = CATEGORIES.includes(info.category) ? info.category : null;
     if (category) {
-      byCategory[category] += SLOT_MIN;
-      trend[range.bucketOf(info.start)][category] += SLOT_MIN;
-      hourly[when.getHours()][category] += SLOT_MIN;
+      byCategory[category] += info.minutes;
+      trend[range.bucketOf(info.start)][category] += info.minutes;
+      hourly[when.getHours()][category] += info.minutes;
     }
-    trend[range.bucketOf(info.start)].total += SLOT_MIN;
-    hourly[when.getHours()].total += SLOT_MIN;
-    weekHour[weekdayIndex(when)][when.getHours()] += SLOT_MIN;
+    trend[range.bucketOf(info.start)].total += info.minutes;
+    hourly[when.getHours()].total += info.minutes;
+    weekHour[weekdayIndex(when)][when.getHours()] += info.minutes;
     activeDays.add(info.date);
     todoCount += info.todoCount || 0;
     recordCount += info.recordCount || 0;
 
     const project = projects.get(info.project) || { name: info.project, minutes: 0, byCategory: emptyCategories(), days: new Set() };
-    project.minutes += SLOT_MIN;
-    if (category) project.byCategory[category] += SLOT_MIN;
+    project.minutes += info.minutes;
+    if (category) project.byCategory[category] += info.minutes;
     project.days.add(info.date);
     projects.set(info.project, project);
 
@@ -132,17 +132,27 @@ function buildDashboard(lightRange, period, anchor) {
 
     const contiguous = previousInfo && info.start - previousInfo.end <= 0;
     if (run && contiguous && run.project === info.project) {
-      run.minutes += SLOT_MIN;
+      run.minutes += info.minutes;
       run.end = info.end;
     } else {
       if (previousInfo && contiguous && previousInfo.project !== info.project) switches += 1;
-      run = { project: info.project, category, start: info.start, end: info.end, minutes: SLOT_MIN };
+      run = { project: info.project, category, start: info.start, end: info.end, minutes: info.minutes };
       sessions.push(run);
     }
     previousInfo = info;
   }
 
-  const trackedMinutes = infos.length * SLOT_MIN;
+  const trackedMinutes = Math.round(infos.reduce((sum, info) => sum + info.minutes, 0));
+
+  // 每段的活跃分钟数带小数，累加完之后统一取整再输出
+  for (const name of CATEGORIES) byCategory[name] = Math.round(byCategory[name]);
+  for (const bucket of [...trend, ...hourly]) {
+    for (const name of CATEGORIES) bucket[name] = Math.round(bucket[name]);
+    bucket.total = CATEGORIES.reduce((sum, name) => sum + bucket[name], 0);
+  }
+  for (const row of weekHour) row.forEach((value, i) => { row[i] = Math.round(value); });
+  for (const project of projects.values()) project.minutes = Math.round(project.minutes);
+  for (const session of sessions) session.minutes = Math.round(session.minutes);
   const projectList = [...projects.values()]
     .map((p) => ({ name: p.name, minutes: p.minutes, category: dominant(p.byCategory), days: p.days.size }))
     .sort((a, b) => b.minutes - a.minutes);

@@ -61,16 +61,20 @@ function dayStats(entries) {
   const byCategory = Object.fromEntries(CATEGORIES.map((c) => [c, 0]));
   const projects = new Map();
   const apps = new Map();
+  let tracked = 0;
   for (const e of entries) {
-    byCategory[e.category] = (byCategory[e.category] || 0) + 10;
-    projects.set(e.project, (projects.get(e.project) || 0) + 10);
+    const minutes = typeof e.activeMinutes === 'number' ? e.activeMinutes : 10; // 真实活跃分钟数
+    tracked += minutes;
+    byCategory[e.category] = (byCategory[e.category] || 0) + minutes;
+    projects.set(e.project, (projects.get(e.project) || 0) + minutes);
     for (const app of e.apps || []) apps.set(app, (apps.get(app) || 0) + 1);
   }
   const sorted = (map) => [...map.entries()].sort((a, b) => b[1] - a[1]);
+  for (const name of Object.keys(byCategory)) byCategory[name] = Math.round(byCategory[name]);
   return {
-    trackedMinutes: entries.length * 10,
+    trackedMinutes: Math.round(tracked),
     byCategory,
-    projects: sorted(projects).map(([name, minutes]) => ({ name, minutes })),
+    projects: sorted(projects).map(([name, minutes]) => ({ name, minutes: Math.round(minutes) })),
     apps: sorted(apps).map(([name, count]) => ({ name, count })),
   };
 }
@@ -129,6 +133,7 @@ function parseDiary(answer) {
  */
 function createDiary({ getConfig, getModelName, withModel, summarizer, onChange, getExtraRoots = () => [] }) {
   const index = new Map(); // date -> { status, attempts, sourceCount, file, device, highlight, todos }
+  const failedThisRun = new Set(); // 这次运行里生成失败过的日期，避免反复自动重试
   let queue = []; // 等待生成的日期，从旧到新
   let runningDate = null;
   let working = false;
@@ -232,7 +237,11 @@ function createDiary({ getConfig, getModelName, withModel, summarizer, onChange,
           if (tries.get(date) < 2) {
             queue.unshift(date);
           } else {
-            const attempts = ((index.get(date) || {}).attempts || 0) + 1;
+            failedThisRun.add(date); // 这次运行里不再自动重试这一天
+            const existing = index.get(date);
+            // 这一天已经有一篇成功的日记（重新生成失败了）：保留原来那篇，不要用错误状态覆盖它
+            if (existing && existing.status === 'done') continue;
+            const attempts = ((existing || {}).attempts || 0) + 1;
             await write(getConfig().dataDir, {
               version: 1,
               date,
@@ -272,10 +281,13 @@ function createDiary({ getConfig, getModelName, withModel, summarizer, onChange,
       if (!getConfig().analysisEnabled) return;
       const now = today();
       const stillSummarizing = summarizer.pendingDates();
-      for (const date of [...summarizer.doneDates().keys()].sort()) {
+      for (const [date, count] of [...summarizer.doneDates()].sort()) {
         if (date >= now || stillSummarizing.has(date) || date === runningDate || queue.includes(date)) continue;
+        if (failedThisRun.has(date)) continue;
         const info = index.get(date);
-        if (info && (info.status === 'done' || info.attempts >= MAX_ATTEMPTS)) continue;
+        if (info && info.status !== 'done' && info.attempts >= MAX_ATTEMPTS) continue;
+        // 已有日记但依据的汇总比现在少（比如当天下午提前生成过，或另一台设备的记录后来才同步过来）：自动补全
+        if (info && info.status === 'done' && info.sourceCount >= count) continue;
         queue.push(date);
       }
       queue.sort();
@@ -286,6 +298,7 @@ function createDiary({ getConfig, getModelName, withModel, summarizer, onChange,
     /** 手动生成或重新生成某一天（包括今天） */
     request(date) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date === runningDate) return;
+      failedThisRun.delete(date); // 用户手动要求的，总是再试一次
       queue = [date, ...queue.filter((d) => d !== date)];
       onChange();
       pump();
@@ -305,6 +318,25 @@ function createDiary({ getConfig, getModelName, withModel, summarizer, onChange,
         days[date] = { summaries: counts.get(date) || 0, diary: stateOf(date) };
       }
       return { year, month, today: today(), days };
+    },
+
+    /**
+     * 这些日期的记录被删掉了一部分：把本机写的日记删掉（里面可能提到了被删的内容）。
+     * 过去的日子之后会按剩下的记录自动重新生成。返回删掉的文件路径。
+     */
+    async invalidate(dates) {
+      const removed = [];
+      for (const date of dates) {
+        const info = index.get(date);
+        if (!info || info.device) continue;
+        await fs.unlink(info.file).catch(() => {});
+        removed.push(info.file);
+        index.delete(date);
+        failedThisRun.delete(date);
+        queue = queue.filter((d) => d !== date);
+      }
+      if (removed.length) onChange();
+      return removed; // 被删掉的日记文件路径
     },
 
     /** 已生成日记的日期，从旧到新 */

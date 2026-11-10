@@ -31,8 +31,14 @@ function setChip(node, text, tone) {
 function renderState(state) {
   const { config, model } = state;
 
-  if (!state.capturing) setChip($('chip-capture'), '截屏：已暂停', '');
+  const pausedNow = state.pausedUntil && Date.now() < state.pausedUntil;
+  if (!state.capturing) setChip($('chip-capture'), '截屏：已停止', '');
+  else if (pausedNow) {
+    const until = new Date(state.pausedUntil);
+    setChip($('chip-capture'), `截屏：暂停到 ${String(until.getHours()).padStart(2, '0')}:${String(until.getMinutes()).padStart(2, '0')}`, 'warn');
+  }
   else if (state.locked && config.skipWhenLocked) setChip($('chip-capture'), '截屏：锁屏中，暂不截', 'warn');
+  else if (state.idle) setChip($('chip-capture'), '截屏：无操作且画面未变，暂不记录', 'warn');
   else setChip($('chip-capture'), `截屏：每 ${config.intervalSec} 秒一次`, 'ok');
 
   if (!config.analysisEnabled) setChip($('chip-model'), '模型：已关闭分析', '');
@@ -57,6 +63,11 @@ function renderState(state) {
   $('heat-busy').hidden = !busy;
   $('heat-busy-text').textContent = busyText;
 
+  // 全局快捷键被别的程序占用时注册不上，在暂停菜单的提示里说明
+  $('pause-for').title = state.shortcutOk === false
+    ? '暂停期间不截屏，到点自动恢复。快捷键 Ctrl+Alt+P 被其他程序占用，暂时不可用'
+    : '暂停期间不截屏，到点自动恢复。快捷键 Ctrl+Alt+P 可随时停止或恢复';
+
   // 多设备同步的状态
   const sync = state.sync || { state: 'idle' };
   let syncText = '只同步 10 分钟汇总和日记，截图和 20 秒记录留在本机。';
@@ -70,7 +81,7 @@ function renderState(state) {
   $('sync-status').textContent = syncText;
   $('btn-sync').disabled = !config.syncEnabled || sync.state === 'syncing';
 
-  $('btn-toggle').textContent = state.capturing ? '暂停截屏' : '开始截屏';
+  $('btn-toggle').textContent = state.capturing && !pausedNow ? '停止截屏' : '恢复截屏';
 
   let notice = '';
   if (state.lastCaptureError) {
@@ -262,6 +273,58 @@ $('btn-clean').addEventListener('click', async () => {
   }
   refreshUsage();
 });
+/* ---------- 暂停一会儿、删除一段记录 ---------- */
+
+function showNote(text) {
+  cleanNote = { text, until: Date.now() + 30000 };
+  $('notice').textContent = text;
+  $('notice').hidden = false;
+}
+
+$('pause-for').addEventListener('change', async () => {
+  const minutes = Number($('pause-for').value);
+  $('pause-for').value = '';
+  if (minutes) renderState(await api.pauseFor(minutes));
+});
+
+// 删除一段时间的全部记录。主进程会弹确认框，这里只负责发起和显示结果。别的页面（动态）也会调用它
+async function deleteRecords(from, to) {
+  const result = await api.deleteRange(from, to);
+  if (result.error) {
+    showNote(`删除没有完成：${result.error}。这段记录可能只删掉了一部分，请再删一次。`);
+    return false;
+  }
+  if (result.empty) showNote('这段时间没有可删除的记录。');
+  if (result.cancelled) return false;
+  showNote(
+    `已删除 ${result.records} 条截屏记录、${result.images} 张截图、${result.slots} 段汇总` +
+    `${result.diaries ? `，以及 ${result.diaries} 篇日记（会按剩下的记录重新生成）` : ''}。` +
+    `${result.synced ? '删除正在同步到远程仓库。' : ''}`
+  );
+  loadRecords();
+  refreshUsage();
+  return true;
+}
+
+$('delete-recent').addEventListener('change', async () => {
+  const minutes = Number($('delete-recent').value);
+  $('delete-recent').value = '';
+  if (minutes) await deleteRecords(Date.now() - minutes * 60000, Date.now());
+});
+
+$('btn-retry').addEventListener('click', async () => {
+  $('btn-retry').disabled = true;
+  const result = await api.retryFailed();
+  const text = result.records || result.slots
+    ? `已重新排队：${result.records} 张分析失败的截图，${result.slots} 个汇总失败或被跳过的时间段。截图已被清理的记录无法重试。`
+    : '没有可以重试的失败项（截图已被清理的记录无法重试）。';
+  cleanNote = { text, until: Date.now() + 30000 };
+  $('notice').textContent = text;
+  $('notice').hidden = false;
+  $('btn-retry').disabled = false;
+  loadRecords();
+});
+
 setInterval(refreshUsage, 60000);
 refreshUsage();
 

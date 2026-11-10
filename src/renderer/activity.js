@@ -44,7 +44,20 @@ function renderSummary(entry, compact) {
   const head = el('div', 'meta');
   head.append(el('time', '', `${entry.date} ${entry.slot}`));
   head.append(el('span', `chip cat ${CATEGORY_CLASS[entry.category] || ''}`, entry.category));
-  if (entry.device) head.append(el('span', 'chip', `来自 ${entry.device}`)); // 其他设备同步过来的记录
+  if (entry.device) {
+    head.append(el('span', 'chip', `来自 ${entry.device}`)); // 其他设备同步过来的记录，只能在那台电脑上删
+  } else {
+    const remove = el('button', 'tag danger', '删除这段记录');
+    remove.type = 'button';
+    remove.title = '删除这 10 分钟的截图、截屏记录和汇总';
+    remove.addEventListener('click', async () => {
+      if (await deleteRecords(entry.startMs, entry.startMs + 600000)) {
+        selectedSlot = null;
+        $('slot-detail').replaceChildren(el('p', 'placeholder', '这段记录已删除。'));
+      }
+    });
+    head.append(remove);
+  }
   box.append(head);
 
   const project = el('button', 'project', entry.project);

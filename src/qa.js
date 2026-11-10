@@ -159,8 +159,8 @@ function createQa({ getConfig, getModelName, withModel, summarizer, diary, onPro
     const days = new Map();
     for (const info of summarizer.lightRange(now - 120 * DAY_MS, now)) {
       const day = days.get(info.date) || { hours: {}, projects: new Map(), apps: new Map(), devices: new Set() };
-      day.hours[info.category] = (day.hours[info.category] || 0) + 1 / 6;
-      day.projects.set(info.project, (day.projects.get(info.project) || 0) + 1 / 6);
+      day.hours[info.category] = (day.hours[info.category] || 0) + info.minutes / 60;
+      day.projects.set(info.project, (day.projects.get(info.project) || 0) + info.minutes / 60);
       for (const app of info.apps) day.apps.set(app, (day.apps.get(app) || 0) + 1);
       if (info.device) day.devices.add(info.device);
       days.set(info.date, day);

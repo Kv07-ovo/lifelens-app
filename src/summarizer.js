@@ -49,14 +49,67 @@ function dayFile(dataDir, start) {
   return path.join(dataDir, p.month, 'summaries', `${p.date}.json`);
 }
 
+/**
+ * 读一天的汇总文件。
+ *   文件不存在            -> null
+ *   读不出来（被占用等）  -> 抛错。调用方必须放弃这次写入，否则会用空内容覆盖掉整天的汇总
+ *   内容损坏              -> 把坏文件改名保留，然后当作不存在
+ */
 async function readDay(file) {
+  let text;
   try {
-    const data = JSON.parse(await fs.readFile(file, 'utf8'));
+    text = await fs.readFile(file, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  }
+  try {
+    const data = JSON.parse(text);
     if (data && Array.isArray(data.summaries)) return data;
   } catch {
-    /* 不存在或损坏都当作空 */
+    /* 落到下面按损坏处理 */
   }
+  await fs.rename(file, `${file}.corrupt-${Date.now()}`);
   return null;
+}
+
+/** 只读场景用：读不出来或损坏就当作没有，不改动任何文件 */
+async function readDayQuiet(file) {
+  try {
+    const data = JSON.parse(await fs.readFile(file, 'utf8'));
+    return data && Array.isArray(data.summaries) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 一个时间段里真实活跃了几分钟（人不在电脑前时不会截屏，所以看实际截到的记录）。
+ * 每张截图代表它之后的一个截屏间隔；间隔取这些记录相邻时间差的中位数，而不是当前设置的值，
+ * 这样改过截屏间隔、或者补汇总以前的时间段都不会算错。相互重叠的部分（比如手动多截的）只算一次。
+ */
+function activeMinutesOf(records, start, fallbackIntervalSec) {
+  const times = records.map((r) => new Date(r.timestamp).getTime()).filter((t) => !Number.isNaN(t)).sort((a, b) => a - b);
+  if (!times.length) return 0;
+  const gaps = [];
+  for (let i = 1; i < times.length; i++) {
+    const gap = times[i] - times[i - 1];
+    if (gap >= 2000) gaps.push(gap); // 两秒内的算同一次（定时截屏和手动截屏撞在一起）
+  }
+  gaps.sort((a, b) => a - b);
+  const interval = Math.min(120000, gaps.length ? gaps[Math.floor(gaps.length / 2)] : fallbackIntervalSec * 1000);
+  const end = start + SLOT_MS;
+  let covered = 0;
+  let until = -Infinity;
+  for (const t of times) {
+    const from = Math.max(t, until);
+    const to = Math.min(t + interval, end);
+    if (to > from) {
+      covered += to - from;
+      until = to;
+    }
+  }
+  return Math.max(0.1, Math.round(covered / 6000) / 10);
 }
 
 /* ---------- 调用模型 ---------- */
@@ -188,6 +241,7 @@ async function callModel(config, detectedModel, prompt) {
 function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued, onChange, getExtraRoots = () => [] }) {
   const index = new Map(); // id -> 轻量信息（不含描述），用于热力图、筛选
   const pending = new Map(); // id -> { id, start, state: 'queued' | 'waiting' }
+  const retryLater = new Map(); // id -> start：这次运行里汇总失败、留到下次启动再试的时间段
   let queue = []; // 等待汇总的时间段 id，从旧到新
   let runningId = null;
   let working = false;
@@ -216,6 +270,8 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
     date: storage.parts(new Date(e.startMs)).date,
     todoCount: (e.todos || []).length,
     recordCount: e.recordCount || 0,
+    // 这 10 分钟里真实活跃的分钟数；早期版本的汇总没有这个字段，按满 10 分钟算
+    minutes: typeof e.activeMinutes === 'number' ? e.activeMinutes : 10,
   });
 
   const stateFile = () => path.join(getConfig().dataDir, 'summary-state.json');
@@ -227,7 +283,7 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
       const names = (await fs.readdir(dir).catch(() => [])).filter((n) => /^\d{4}-\d{2}-\d{2}\.json$/.test(n));
       for (const name of names) {
         const file = path.join(dir, name);
-        const data = await readDay(file);
+        const data = await readDayQuiet(file);
         for (const entry of (data && data.summaries) || []) {
           // 其他设备上失败或跳过的时间段对本机没有意义，只合并成功的
           if (device && entry.status !== 'done') continue;
@@ -272,7 +328,7 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
     }
     const found = new Map();
     for (const [file, wanted] of byFile) {
-      const data = await locked(() => readDay(file));
+      const data = await locked(() => readDayQuiet(file));
       for (const entry of (data && data.summaries) || []) {
         if (wanted.has(entry.id)) found.set(entry.id, { ...entry, device: index.get(entry.id).device });
       }
@@ -318,7 +374,13 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
         if (id === runningId) continue;
         const done = index.get(id);
         // 只有本机已经处理过才跳过；别的设备碰巧有同一时间段的汇总不影响本机汇总自己的记录
-        if (done && !done.device && (done.status !== 'error' || done.attempts >= MAX_ATTEMPTS)) continue;
+        if (done && !done.device) {
+          // 失败过的：没到上限就再试。被跳过的（当时没有一张截图分析出来）：现在有分析结果或正在补分析了，也再试。
+          // 后一条让“重试失败项”在应用重启后仍然有效，不依赖内存里的状态。
+          const usable = records.some((r) => (r.status === 'done' && r.activity) || (r.status === 'pending' && isAnalysisQueued(r.id)));
+          const retry = done.status === 'error' ? done.attempts < MAX_ATTEMPTS : done.status === 'skipped' && usable;
+          if (!retry) continue;
+        }
         // 这个时间段里还有截图在排队等分析：先等它们分析完
         const waiting = records.some((r) => r.status === 'pending' && isAnalysisQueued(r.id));
         pending.set(id, { ...pending.get(id), id, start, state: waiting ? 'waiting' : 'queued' });
@@ -332,7 +394,7 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
     lastScan = now;
 
     // 记下“这之前都处理完了”，下次启动不用从头扫
-    const earliest = Math.min(currentSlot, ...[...pending.values()].map((p) => p.start));
+    const earliest = Math.min(currentSlot, ...[...pending.values()].map((p) => p.start), ...retryLater.values());
     await fs.mkdir(config.dataDir, { recursive: true }).catch(() => {});
     await fs.writeFile(stateFile(), JSON.stringify({ scannedThroughMs: earliest, scannedThrough: storage.localIso(new Date(earliest)) }, null, 2), 'utf8').catch(() => {});
     onChange();
@@ -361,9 +423,9 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
     };
 
     const hour = await storage.readHourFile(storage.hourFile(config.dataDir, new Date(start)));
-    const records = ((hour && hour.records) || []).filter(
-      (r) => r.status === 'done' && r.activity && slotStart(new Date(r.timestamp).getTime()) === start
-    );
+    const inSlot = ((hour && hour.records) || []).filter((r) => slotStart(new Date(r.timestamp).getTime()) === start);
+    const records = inSlot.filter((r) => r.status === 'done' && r.activity);
+    const activeMinutes = activeMinutesOf(inSlot, start, config.intervalSec);
 
     let entry;
     if (!records.length) {
@@ -383,6 +445,7 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
         apps: result.apps,
         todos: result.todos,
         recordCount: records.length,
+        activeMinutes,
         previousId: previous ? previous.id : null,
         model: result.model,
         generatedAt: storage.localIso(new Date()),
@@ -391,8 +454,10 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
       };
     }
     if (gen !== generation) return;
+    if (!pending.has(id)) return; // 汇总期间用户把这段时间删掉了：结果作废，不要写回去
     await writeEntry(config.dataDir, entry);
     index.set(id, light(entry));
+    retryLater.delete(id);
   }
 
   async function pump() {
@@ -435,6 +500,8 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
             await writeEntry(getConfig().dataDir, entry).catch(() => {});
             index.set(id, light(entry));
             pending.delete(id);
+            // 还没到重试上限：记下来，让“已处理到哪里”的进度不要越过它，下次启动会再试
+            if (attempts < MAX_ATTEMPTS) retryLater.set(id, job.start);
           }
         } finally {
           runningId = null;
@@ -465,6 +532,74 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
       await loadIndex();
       await scan(true).catch(() => {});
       pump();
+    },
+
+    /**
+     * 删除 [from, to) 内本机的 10 分钟汇总（from、to 应对齐到 10 分钟边界）。
+     * 其他设备同步过来的汇总不归本机管，只统计数量。dryRun 时只统计。
+     * 返回 { slots, others, dates }，dates 是受影响的日期。
+     */
+    async deleteRange(from, to, dryRun) {
+      const mine = [];
+      let others = 0;
+      for (const info of index.values()) {
+        if (info.start < from || info.start >= to) continue;
+        if (info.device) others += info.status === 'done' ? 1 : 0;
+        else mine.push(info);
+      }
+      const dates = [...new Set(mine.map((info) => info.date))];
+      const slots = mine.filter((info) => info.status === 'done').length;
+      if (dryRun || !mine.length) return { slots, others, dates };
+
+      const byFile = new Map();
+      for (const info of mine) {
+        if (!byFile.has(info.file)) byFile.set(info.file, new Set());
+        byFile.get(info.file).add(info.id);
+      }
+      for (const [file, ids] of byFile) {
+        await locked(async () => {
+          const data = await readDay(file);
+          if (!data) return;
+          data.summaries = data.summaries.filter((s) => !ids.has(s.id));
+          data.count = data.summaries.length;
+          data.updatedAt = storage.localIso(new Date());
+          const tmp = `${file}.tmp`;
+          await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
+          await fs.rename(tmp, file);
+        });
+      }
+      for (const info of mine) {
+        index.delete(info.id);
+        pending.delete(info.id);
+        retryLater.delete(info.id);
+      }
+      // 这段时间里还在排队的也一并取消
+      for (const [id, job] of pending) if (job.start >= from && job.start < to) pending.delete(id);
+      queue = queue.filter((id) => pending.has(id));
+      onChange();
+      return { slots, others, dates };
+    },
+
+    /**
+     * 重试失败项：把本机汇总失败、或因为截图没分析出来而跳过的时间段重新排队。
+     * 返回重新排队的时间段数。
+     */
+    async retryFailed() {
+      let earliest = Infinity;
+      let count = 0;
+      for (const [id, info] of index) {
+        if (info.device || (info.status !== 'error' && info.status !== 'skipped')) continue;
+        index.delete(id);
+        retryLater.delete(id);
+        earliest = Math.min(earliest, info.start);
+        count += 1;
+      }
+      if (!count) return 0;
+      // 把“已处理到哪里”退回到最早的失败时间段，再完整扫描一遍
+      await fs.writeFile(stateFile(), JSON.stringify({ scannedThroughMs: earliest }), 'utf8').catch(() => {});
+      await scan(true).catch(() => {});
+      pump();
+      return count;
     },
 
     /** 只读取已有的汇总索引，不扫描、不调用模型、不写任何文件 */

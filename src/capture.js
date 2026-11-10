@@ -41,6 +41,8 @@ async function captureScreens({ maxWidth, jpegQuality }) {
 
     const size = image.getSize();
     shots.push({
+      // 画面指纹：缩到 32 像素宽的位图，用来判断画面和上一次相比有没有变化
+      fingerprint: image.resize({ width: 32, quality: 'good' }).toBitmap(),
       index: shots.length + 1,
       displayId: String(display.id),
       primary: display.id === primaryId,
@@ -55,4 +57,21 @@ async function captureScreens({ maxWidth, jpegQuality }) {
   return { shots, displayCount: displays.length };
 }
 
-module.exports = { captureScreens };
+/**
+ * 两次截屏的画面是否基本相同。逐块屏幕比较指纹的平均像素差，
+ * 允许很小的差异（时钟跳秒、光标闪烁），看视频、滚动页面这类变化会被识别为“变了”。
+ */
+function sameScreens(previous, current, tolerance = 1.5) {
+  if (!previous || previous.length !== current.length) return false;
+  for (let i = 0; i < current.length; i++) {
+    const a = previous[i];
+    const b = current[i];
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let p = 0; p < a.length; p++) diff += Math.abs(a[p] - b[p]);
+    if (diff / a.length > tolerance) return false;
+  }
+  return true;
+}
+
+module.exports = { captureScreens, sameScreens };
