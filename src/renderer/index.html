@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' lifelens: data:; style-src 'self'; script-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LifeLens</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <h1>LifeLens</h1>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="页面">
+      <button type="button" class="tab active" role="tab" aria-selected="true" data-view="records">截屏记录</button>
+      <button type="button" class="tab" role="tab" aria-selected="false" data-view="activity">动态</button>
+      <button type="button" class="tab" role="tab" aria-selected="false" data-view="diary">日记</button>
+      <button type="button" class="tab" role="tab" aria-selected="false" data-view="dashboard">看板</button>
+      <button type="button" class="tab" role="tab" aria-selected="false" data-view="qa">问答</button>
+    </nav>
+    <div class="chips">
+      <span class="chip" id="chip-capture">截屏：—</span>
+      <span class="chip" id="chip-model">模型：—</span>
+      <span class="chip" id="chip-queue">待分析：0</span>
+      <span class="chip busy" id="chip-summary" hidden><span class="spinner" aria-hidden="true"></span><span id="chip-summary-text">汇总中</span></span>
+    </div>
+    <div class="actions">
+      <button id="btn-toggle" class="primary">开始截屏</button>
+      <button id="btn-now">立即截一张</button>
+      <button id="btn-clean" title="删除截图图片，保留文字记录">清理截图</button>
+      <button id="btn-folder">打开数据目录</button>
+    </div>
+  </header>
+
+  <p class="notice" id="notice" hidden></p>
+
+  <main class="layout" id="view-records">
+    <section class="timeline" aria-label="最近记录">
+      <div class="section-head">
+        <h2>最近记录</h2>
+        <span class="muted" id="summary"></span>
+      </div>
+      <ol id="records" class="records"></ol>
+      <p id="empty" class="empty">还没有记录。开始截屏后，这里会按时间显示每次截屏（所有屏幕）和模型的总结。</p>
+    </section>
+
+    <aside class="settings" aria-label="设置">
+      <h2>设置</h2>
+      <form id="form">
+        <fieldset>
+          <legend>截屏</legend>
+          <label>间隔（秒）
+            <input type="number" name="intervalSec" min="5" max="3600" required>
+          </label>
+          <label>数据目录
+            <span class="row">
+              <input type="text" name="dataDir" required>
+              <button type="button" id="btn-choose">选择</button>
+            </span>
+          </label>
+          <label>每块屏幕图片的最大宽度（像素，0 为原始分辨率）
+            <input type="number" name="maxWidth" min="0" max="7680">
+          </label>
+          <label>JPEG 质量（30–100）
+            <input type="number" name="jpegQuality" min="30" max="100">
+          </label>
+          <label class="check"><input type="checkbox" name="autoStart"> 打开应用后自动开始截屏</label>
+          <label class="check"><input type="checkbox" name="skipWhenLocked"> 锁屏时不截屏</label>
+        </fieldset>
+
+        <fieldset>
+          <legend>本地模型（Strata）</legend>
+          <label class="check"><input type="checkbox" name="analysisEnabled"> 用本地模型分析截图</label>
+          <label>服务地址
+            <input type="text" name="baseUrl" placeholder="http://127.0.0.1:8080/v1" required>
+          </label>
+          <label>模型名（留空自动使用当前加载的模型）
+            <input type="text" name="model">
+          </label>
+          <label>API Key（没设置就留空）
+            <input type="password" name="apiKey" autocomplete="off">
+          </label>
+          <label>提示词
+            <textarea name="prompt" rows="5"></textarea>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>多设备同步</legend>
+          <label class="check"><input type="checkbox" name="syncEnabled"> 用私有 Git 仓库同步文字记忆</label>
+          <label>仓库地址
+            <input type="text" name="syncRepo" placeholder="https://github.com/你的账号/lifelens-memory.git">
+          </label>
+          <label>这台电脑的名字
+            <input type="text" name="deviceName" placeholder="例如 笔记本、台式机">
+          </label>
+          <p class="muted" id="sync-status">只同步 10 分钟汇总和日记，截图和 20 秒记录留在本机。</p>
+          <button type="button" id="btn-sync">立即同步</button>
+        </fieldset>
+
+        <div class="form-actions">
+          <button type="submit" class="primary">保存设置</button>
+          <button type="button" id="btn-test">测试连接</button>
+          <span class="muted" id="form-msg" role="status"></span>
+        </div>
+      </form>
+    </aside>
+  </main>
+
+  <main class="activity" id="view-activity" hidden>
+    <div class="activity-side">
+      <section class="glass card" aria-label="热力图">
+        <div class="section-head">
+          <h2>最近 12 小时</h2>
+          <span class="muted busy-note" id="heat-busy" hidden><span class="spinner" aria-hidden="true"></span><span id="heat-busy-text">汇总中</span></span>
+        </div>
+        <div class="heatmap-wrap">
+          <div class="heat-rows" aria-hidden="true">
+            <span>:00</span><span>:10</span><span>:20</span><span>:30</span><span>:40</span><span>:50</span>
+          </div>
+          <div class="heatmap" id="heatmap"></div>
+        </div>
+        <ul class="legend" aria-label="图例">
+          <li><i class="dot cat-work"></i>工作</li>
+          <li><i class="dot cat-study"></i>学习</li>
+          <li><i class="dot cat-fun"></i>娱乐</li>
+          <li><i class="dot cat-social"></i>社交</li>
+          <li><i class="dot st-pending"></i>汇总中</li>
+          <li><i class="dot st-none"></i>无记录</li>
+        </ul>
+      </section>
+
+      <section class="glass card" aria-label="选中的时间段">
+        <h2>选中的 10 分钟</h2>
+        <div id="slot-detail" class="slot-detail">
+          <p class="placeholder">点上面的任意一个点，查看那 10 分钟在做什么。</p>
+        </div>
+      </section>
+
+      <section class="glass card" aria-label="用到的软件">
+        <div class="section-head">
+          <h2>用到的软件</h2>
+          <span class="muted">点击可筛选</span>
+        </div>
+        <div class="tags" id="app-tags"></div>
+        <p class="placeholder" id="app-empty">还没有汇总结果。</p>
+      </section>
+    </div>
+
+    <section class="activity-main" aria-label="时间线">
+      <form class="glass filters" id="filters">
+        <label>项目
+          <select id="f-project"><option value="">全部项目</option></select>
+        </label>
+        <label>开始时间
+          <input type="datetime-local" id="f-from">
+        </label>
+        <label>结束时间
+          <input type="datetime-local" id="f-to">
+        </label>
+        <button type="button" id="f-clear">清除筛选</button>
+        <span class="muted" id="f-count" role="status"></span>
+        <div class="tags active-apps" id="f-apps"></div>
+      </form>
+      <div class="feed" id="feed">
+        <ol class="feed-list" id="feed-list"></ol>
+        <p class="empty" id="feed-empty" hidden>还没有汇总。应用运行满 10 分钟、并且本地模型在线后，这里会出现每 10 分钟的活动。</p>
+        <p class="muted feed-more" id="feed-more" hidden>加载中…</p>
+      </div>
+    </section>
+  </main>
+
+  <main class="diary" id="view-diary" hidden>
+    <div class="diary-side">
+      <section class="glass card" aria-label="日历">
+        <div class="cal-head">
+          <button type="button" class="icon-btn" id="cal-prev" aria-label="上个月">‹</button>
+          <h2 id="cal-title"></h2>
+          <button type="button" class="icon-btn" id="cal-next" aria-label="下个月">›</button>
+        </div>
+        <div class="cal-week" aria-hidden="true">
+          <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+        <ul class="legend">
+          <li><i class="cal-mark done"></i>已有日记</li>
+          <li><i class="cal-mark data"></i>有记录，未生成</li>
+          <li><i class="cal-mark busy"></i>生成中</li>
+        </ul>
+      </section>
+      <p class="glass card busy-note" id="diary-busy" hidden><span class="spinner" aria-hidden="true"></span><span id="diary-busy-text"></span></p>
+    </div>
+    <section class="glass diary-page" id="diary-page" aria-label="日记内容"></section>
+  </main>
+
+  <main class="dashboard" id="view-dashboard" hidden>
+    <div class="glass dash-bar">
+      <div class="tabs" role="group" aria-label="统计周期">
+        <button type="button" class="tab active" data-period="day">天</button>
+        <button type="button" class="tab" data-period="week">周</button>
+        <button type="button" class="tab" data-period="month">月</button>
+        <button type="button" class="tab" data-period="year">年</button>
+      </div>
+      <button type="button" class="icon-btn" id="dash-prev" aria-label="上一个周期">‹</button>
+      <h2 id="dash-label"></h2>
+      <button type="button" class="icon-btn" id="dash-next" aria-label="下一个周期">›</button>
+      <button type="button" id="dash-now">回到现在</button>
+    </div>
+    <div class="dash-body" id="dash-body"></div>
+    <div class="tip" id="tip" hidden></div>
+  </main>
+
+  <main class="qa" id="view-qa" hidden>
+    <section class="glass qa-chat" id="qa-chat" aria-label="对话" aria-live="polite">
+      <div class="qa-intro" id="qa-intro">
+        <h2>问问你的记录</h2>
+        <p class="muted">本地模型会自己决定去截图分析、10 分钟汇总还是日记里搜索，最多搜 3 次，再根据搜到的内容回答。</p>
+        <div class="tags" id="qa-examples">
+          <button type="button" class="tag">我今天主要在做什么？</button>
+          <button type="button" class="tag">这周花在娱乐上的时间多吗？</button>
+          <button type="button" class="tag">最近有哪些待办还没处理？</button>
+          <button type="button" class="tag">我上次用 Chrome 是在干什么？</button>
+        </div>
+      </div>
+    </section>
+    <form class="glass qa-form" id="qa-form">
+      <textarea id="qa-input" rows="2" placeholder="输入问题，按 Enter 发送，Shift+Enter 换行" aria-label="问题"></textarea>
+      <button type="submit" class="primary" id="qa-send">发送</button>
+    </form>
+  </main>
+
+  <script src="renderer.js"></script>
+  <script src="activity.js"></script>
+  <script src="diary.js"></script>
+  <script src="dashboard.js"></script>
+  <script src="qa.js"></script>
+</body>
+</html>

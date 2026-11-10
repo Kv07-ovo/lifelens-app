@@ -1,0 +1,12 @@
+# 依赖和构建产物
+node_modules/
+dist/
+build/
+
+# 本机工具配置（含本机路径）
+.claude/
+
+# 万一有人把数据目录设到了项目里：截图、记录、同步副本都不入库
+data/
+LifeLens/
+*.log

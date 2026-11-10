@@ -1,0 +1,19 @@
+{
+  "name": "lifelens",
+  "productName": "LifeLens",
+  "version": "0.1.0",
+  "description": "定时截屏，并用本地模型（Strata）总结用户正在做什么",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "icon": "node scripts/make-icon.js",
+    "pack": "node scripts/pack.js",
+    "install-app": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1",
+    "release": "npm run icon && npm run pack && npm run install-app"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^45.2.3"
+  }
+}
