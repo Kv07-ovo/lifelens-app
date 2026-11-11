@@ -25,7 +25,11 @@ const DEFAULTS = {
   requestTimeoutSec: 180,
   maxQueue: 180,              // 待分析队列上限（180 张 = 1 小时），超出则跳过最旧的
   prompt: DEFAULT_PROMPT,
-  syncEnabled: false,         // 多设备同步（私有 Git 仓库）
+  nudgeMorning: true,         // 早上：接着上次的来
+  nudgeTodos: true,           // 白天：待办提醒
+  nudgeEvening: true,         // 晚上：今天的小结
+  eveningTime: '22:30',       // 晚上小结的时间（HH:mm）
+  syncEnabled: false,        // 多设备同步（私有 Git 仓库）
   syncRepo: '',               // 仓库地址，例如 https://github.com/你/lifelens-memory.git
   deviceName: '',             // 这台电脑的名字，留空 = 计算机名
 };
@@ -64,6 +68,10 @@ function normalize(raw) {
   c.apiKey = String(c.apiKey || '').trim();
   c.reasoningEffort = String(c.reasoningEffort || '').trim();
   c.prompt = String(c.prompt || '').trim() || DEFAULT_PROMPT;
+  c.nudgeMorning = !!c.nudgeMorning;
+  c.nudgeTodos = !!c.nudgeTodos;
+  c.nudgeEvening = !!c.nudgeEvening;
+  c.eveningTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(c.eveningTime) ? c.eveningTime : DEFAULTS.eveningTime;
   c.syncEnabled = !!c.syncEnabled;
   c.syncRepo = String(c.syncRepo || '').trim();
   c.deviceName = String(c.deviceName || '').trim() || require('os').hostname();

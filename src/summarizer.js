@@ -238,7 +238,7 @@ async function callModel(config, detectedModel, prompt) {
 /**
  * getExtraRoots() 返回其他设备同步过来的数据目录 [{ dir, device }]，只读，和本机的汇总合并在一起用。
  */
-function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued, onChange, getExtraRoots = () => [] }) {
+function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued, onChange, getExtraRoots = () => [], onSummary = () => {} }) {
   const index = new Map(); // id -> 轻量信息（不含描述），用于热力图、筛选
   const pending = new Map(); // id -> { id, start, state: 'queued' | 'waiting' }
   const retryLater = new Map(); // id -> start：这次运行里汇总失败、留到下次启动再试的时间段
@@ -458,6 +458,7 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
     await writeEntry(config.dataDir, entry);
     index.set(id, light(entry));
     retryLater.delete(id);
+    onSummary(entry); // 新的汇总出来了（待办收件箱靠它收集待办）
   }
 
   async function pump() {
@@ -549,7 +550,8 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
       }
       const dates = [...new Set(mine.map((info) => info.date))];
       const slots = mine.filter((info) => info.status === 'done').length;
-      if (dryRun || !mine.length) return { slots, others, dates };
+      const ids = mine.map((info) => info.id);
+      if (dryRun || !mine.length) return { slots, others, dates, ids };
 
       const byFile = new Map();
       for (const info of mine) {
@@ -577,7 +579,7 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
       for (const [id, job] of pending) if (job.start >= from && job.start < to) pending.delete(id);
       queue = queue.filter((id) => pending.has(id));
       onChange();
-      return { slots, others, dates };
+      return { slots, others, dates, ids };
     },
 
     /**

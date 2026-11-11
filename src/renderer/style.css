@@ -596,6 +596,35 @@ select.menu option { background: #0e3d44; color: #fff; }
   .main-items { grid-template-columns: 1fr; }
 }
 
+/* ---------- 今日页 ---------- */
+.today { flex: 1; min-height: 0; display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 14px; }
+.today-col { display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+.today-todos { overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.today-todos .section-head { margin: 0; }
+.today-todos > p { margin: 0; }
+.today-big { margin: 6px 0 0; font-size: 30px; font-weight: 600; line-height: 1.2; }
+.today-last { margin: 4px 0 8px; font-size: 18px; font-weight: 600; }
+.today .card p { margin-top: 0; }
+.today-projects { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.today-projects li { display: flex; justify-content: space-between; gap: 12px; }
+.today-projects li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.todo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(4, 28, 36, 0.3);
+  border: 1px solid var(--edge-soft);
+}
+.todo.closed { opacity: 0.7; }
+.todo-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.todo-text span:first-child { font-size: 15px; }
+.todo-actions { display: flex; gap: 8px; flex: none; }
+.todo-closed summary { cursor: pointer; color: var(--muted); margin-bottom: 10px; }
+
 /* ---------- 问答页 ---------- */
 .qa { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 980px; margin: 0 auto; }
 .qa-chat { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 20px 22px; border-radius: 24px; }
@@ -631,7 +660,7 @@ select.menu option { background: #0e3d44; color: #fff; }
 
 @media (max-width: 900px) {
   body { overflow-y: auto; height: auto; min-height: 100%; }
-  .layout, .activity, .diary { grid-template-columns: 1fr; }
+  .layout, .activity, .diary, .today { grid-template-columns: 1fr; }
   .timeline, .settings, .activity-side, .feed, .diary-side, .diary-page, .dash-body { overflow: visible; }
   .record { grid-template-columns: 1fr; }
 }

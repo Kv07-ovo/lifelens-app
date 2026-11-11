@@ -14,7 +14,8 @@
       <h1>LifeLens</h1>
     </div>
     <nav class="tabs" role="tablist" aria-label="页面">
-      <button type="button" class="tab active" role="tab" aria-selected="true" data-view="records">截屏记录</button>
+      <button type="button" class="tab active" role="tab" aria-selected="true" data-view="today">今日</button>
+      <button type="button" class="tab" role="tab" aria-selected="false" data-view="records">截屏记录</button>
       <button type="button" class="tab" role="tab" aria-selected="false" data-view="activity">动态</button>
       <button type="button" class="tab" role="tab" aria-selected="false" data-view="diary">日记</button>
       <button type="button" class="tab" role="tab" aria-selected="false" data-view="dashboard">看板</button>
@@ -49,7 +50,31 @@
 
   <p class="notice" id="notice" hidden></p>
 
-  <main class="layout" id="view-records">
+  <main class="today" id="view-today">
+    <div class="today-col">
+      <section class="glass card" id="today-now" aria-label="今天"></section>
+      <section class="glass card" id="today-prev" aria-label="接着上次的来"></section>
+    </div>
+    <section class="glass card today-todos" aria-label="待办收件箱">
+      <div class="section-head">
+        <h2>待办收件箱</h2>
+        <span class="muted" id="todo-count"></span>
+      </div>
+      <p class="muted">这些是模型从你的屏幕上看出来的、可能漏掉的事，不一定都对。做完了点“完成”，不是你的事点“忽略”，被忽略的同类内容之后不会再提。</p>
+      <ul class="todo-list" id="todo-open"></ul>
+      <p class="placeholder" id="todo-empty" hidden>现在没有待处理的事。</p>
+      <details class="todo-closed" id="todo-closed-box" hidden>
+        <summary>最近处理掉的</summary>
+        <ul class="todo-list" id="todo-closed"></ul>
+      </details>
+      <div class="form-actions">
+        <button type="button" id="btn-snooze">今天别再提醒</button>
+        <span class="muted" id="nudge-note"></span>
+      </div>
+    </section>
+  </main>
+
+  <main class="layout" id="view-records" hidden>
     <section class="timeline" aria-label="最近记录">
       <div class="section-head">
         <h2>最近记录</h2>
@@ -104,6 +129,17 @@
           <label>提示词
             <textarea name="prompt" rows="5"></textarea>
           </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>主动提醒</legend>
+          <label class="check"><input type="checkbox" name="nudgeMorning"> 早上：接着上次的来</label>
+          <label class="check"><input type="checkbox" name="nudgeTodos"> 白天：提醒可能漏掉的待办</label>
+          <label class="check"><input type="checkbox" name="nudgeEvening"> 晚上：今天的小结</label>
+          <label>晚上小结的时间
+            <input type="time" name="eveningTime">
+          </label>
+          <button type="button" id="btn-test-nudge">发一条测试提醒</button>
         </fieldset>
 
         <fieldset>
@@ -255,5 +291,6 @@
   <script src="diary.js"></script>
   <script src="dashboard.js"></script>
   <script src="qa.js"></script>
+  <script src="today.js"></script>
 </body>
 </html>

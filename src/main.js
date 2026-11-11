@@ -1,7 +1,8 @@
 const {
-  app, BrowserWindow, Tray, Menu, ipcMain, dialog, shell, nativeImage, powerMonitor, protocol, net, globalShortcut,
+  app, BrowserWindow, Tray, Menu, ipcMain, dialog, shell, nativeImage, powerMonitor, protocol, net, globalShortcut, screen,
 } = require('electron');
 const path = require('path');
+const { execFile } = require('child_process');
 const { pathToFileURL } = require('url');
 
 const configStore = require('./config');
@@ -14,6 +15,8 @@ const { createDiary } = require('./diary');
 const { buildDashboard } = require('./dashboard');
 const { createQa } = require('./qa');
 const { createSync } = require('./sync');
+const { createTodos } = require('./todos');
+const { createNudges } = require('./nudges');
 
 // 界面通过 lifelens://image/?path=... 读取截图，由主进程校验后再给，只放行数据目录里的 jpg
 protocol.registerSchemesAsPrivileged([
@@ -66,12 +69,14 @@ const sync = createSync({
   onImported: async () => {
     await summarizer.load();
     await diary.load();
+    await collectRecentTodos();
     send('summaries-changed');
     send('diary-changed');
   },
 });
 
 const summarizer = createSummarizer({
+  onSummary: (entry) => todos.ingest(entry),
   getExtraRoots: () => sync.extraRoots(),
   getConfig: () => config,
   getModelName: () => state.model.model,
@@ -94,6 +99,118 @@ const diary = createDiary({
     send('diary-changed');
   },
 });
+
+const todos = createTodos({
+  getConfig: () => config,
+  onChange: () => send('today-changed'),
+});
+
+/* ---------- 提醒卡片 ---------- */
+
+/**
+ * 提醒不走系统通知，而是应用自己在屏幕右下角画一张卡片。
+ * 原因：很多人把 Windows 的通知总开关关掉了，系统通知根本弹不出来；自己画的卡片不受那个开关影响。
+ * 卡片不抢焦点（不会打断正在打的字），12 秒后自动消失；点卡片打开“今日”页，点 × 只是关掉。
+ * 一次只显示一张，多的排队。用户在全屏游戏、看全屏视频或演示时先不弹，等退出全屏后再弹。
+ */
+const TOAST_MS = 12000;
+const TOAST_MAX_WAIT_MS = 2 * 60 * 60 * 1000; // 排队超过这么久的提醒已经过时，直接丢弃
+const toasts = []; // 等待显示的提醒：{ title, body, at }
+let toastWin = null;
+let toastTimer = null;
+let toastChecking = false;
+
+/**
+ * 现在适不适合弹提醒。问的是 Windows 自己的判断（SHQueryUserNotificationState）：
+ * 2 = 有全屏程序在运行，3 = 全屏游戏，4 = 演示模式，7 = 全屏应用，这些时候不打扰。
+ * 查不到（非 Windows、命令失败）就当作可以弹。每天最多查几次，开销可以忽略。
+ */
+function okToInterrupt() {
+  if (process.platform !== 'win32') return Promise.resolve(true);
+  const script =
+    "Add-Type -Namespace W -Name N -MemberDefinition '[DllImport(\"shell32.dll\")] public static extern int SHQueryUserNotificationState(out int s);';" +
+    '$s = 0; [void][W.N]::SHQueryUserNotificationState([ref]$s); $s';
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 15000, windowsHide: true }, (err, stdout) => {
+      const stateCode = Number(String(stdout).trim());
+      resolve(err || !Number.isFinite(stateCode) ? true : ![2, 3, 4, 7].includes(stateCode));
+    });
+  });
+}
+
+function closeToast() {
+  clearTimeout(toastTimer);
+  if (toastWin && !toastWin.isDestroyed()) toastWin.destroy();
+  toastWin = null;
+  setTimeout(showNextToast, 600); // 后面还有排队的就接着显示
+}
+
+async function showNextToast() {
+  if (toastWin || toastChecking || !toasts.length) return;
+  toastChecking = true;
+  try {
+    while (toasts.length && Date.now() - toasts[0].at > TOAST_MAX_WAIT_MS) toasts.shift();
+    if (!toasts.length || !(await okToInterrupt())) return; // 现在不方便：留在队列里，下一分钟再看
+    const { title, body } = toasts.shift();
+    const area = screen.getPrimaryDisplay().workArea;
+    const width = 400;
+    const height = 132;
+    toastWin = new BrowserWindow({
+      width,
+      height,
+      x: area.x + area.width - width - 8,
+      y: area.y + area.height - height - 8,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      focusable: false, // 不抢键盘焦点
+      show: false,
+      hasShadow: false,
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
+    toastWin.setAlwaysOnTop(true, 'screen-saver');
+    toastWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    toastWin.once('ready-to-show', () => toastWin && toastWin.showInactive());
+    toastWin.on('closed', () => { toastWin = null; });
+    toastWin.loadFile(path.join(__dirname, 'renderer', 'toast.html'), { query: { title, body } });
+    toastTimer = setTimeout(closeToast, TOAST_MS);
+  } finally {
+    toastChecking = false;
+  }
+}
+
+/** 发一条提醒：进队列，能显示就马上显示 */
+function notify({ title, body }) {
+  toasts.push({ title, body, at: Date.now() });
+  showNextToast();
+  send('today-changed');
+}
+
+function openToday() {
+  showWindow();
+  send('open-view', 'today');
+}
+
+const nudges = createNudges({
+  getConfig: () => config,
+  summarizer,
+  diary,
+  todos,
+  notify,
+  getIdleSeconds: () => powerMonitor.getSystemIdleTime(),
+  isRecording: () => isRecording(),
+});
+
+/** 把最近几天的汇总里的待办补收一遍（启动时、从其他设备同步到新数据时）。重复收不会重复计数 */
+async function collectRecentTodos() {
+  const now = Date.now();
+  for (const entry of await summarizer.fullRange(now - 3 * 24 * 60 * 60 * 1000, now)) todos.ingest(entry);
+}
 
 const qa = createQa({
   getConfig: () => config,
@@ -280,6 +397,7 @@ async function deleteRange(fromMs, toMs) {
   const result = await summarizer.deleteRange(from, to, false);
   const diaries = await diary.invalidate(result.dates);
   await sync.forget(diaries);
+  todos.forgetSources(result.ids); // 只来自这段时间的待办也删掉
   const removed = await storage.deleteRange(config.dataDir, from, to, false);
   const gone = new Set(removed.ids);
   for (let i = queue.length - 1; i >= 0; i--) if (gone.has(queue[i].id)) queue.splice(i, 1); // 还没分析的也不用分析了
@@ -466,6 +584,8 @@ function registerIpc() {
     await refreshModel();
     await summarizer.reload();
     await diary.reload();
+    await todos.load(); // 数据目录可能换了
+    await nudges.load();
     sync.run();
     return snapshot();
   });
@@ -477,7 +597,14 @@ function registerIpc() {
   ipcMain.handle('diary:month', (_event, year, month) => diary.month(Number(year), Number(month)));
   ipcMain.handle('diary:get', (_event, date) => diary.get(String(date)));
   ipcMain.handle('diary:generate', (_event, date) => diary.request(String(date)));
-  ipcMain.handle('capture:pause', (_event, minutes) => {
+  ipcMain.handle('today:get', () => nudges.overview());
+  ipcMain.handle('todos:set', (_event, id, status) => todos.setStatus(String(id), String(status)));
+  ipcMain.handle('nudge:snooze', (_event, on) => {
+    nudges.snooze(!!on);
+    return nudges.overview();
+  });
+  ipcMain.handle('nudge:test', () => notify({ title: 'LifeLens 测试提醒', body: '能看到这条，说明提醒可以正常显示。点一下会打开“今日”页。' }));
+  ipcMain.handle('capture:pause',(_event, minutes) => {
     pauseFor(Math.min(24 * 60, Math.max(0, Number(minutes) || 0)));
     return snapshot();
   });
@@ -606,6 +733,18 @@ if (!app.requestSingleInstanceLock()) {
     setInterval(() => summarizer.tick(), SUMMARY_TICK_MS);
     sync.run(); // 启动时同步一次，之后每 10 分钟一次
     setInterval(() => sync.run(), SYNC_INTERVAL_MS);
+    // 主动提醒：收集待办，之后每分钟判断一次现在该不该开口
+    await todos.load();
+    await nudges.load();
+    await collectRecentTodos();
+    setInterval(() => {
+      nudges.tick();
+      showNextToast(); // 之前因为全屏而没弹出来的提醒，现在再试一次
+    }, 60000);
+    ipcMain.on('toast:done', (_event, open) => {
+      closeToast();
+      if (open) openToday();
+    });
     // 截图自动保留策略：启动后跑一次，之后每小时检查一次（跨过零点后会删掉刚过期的那一天）
     const isQueued = (id) => state.currentId === id || queue.some((job) => job.id === id);
     const prune = () => storage.pruneScreenshots(config.dataDir, config.keepScreenshotDays, isQueued).catch(() => {});
