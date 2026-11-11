@@ -27,7 +27,7 @@ const md = (ms) => {
 };
 
 function card(title, subtitle, className) {
-  const box = el('section', `glass chart-card ${className || ''}`.trim());
+  const box = el('section', `glass deep chart-card ${className || ''}`.trim());
   const head = el('div', 'chart-head');
   head.append(el('h3', '', title));
   if (subtitle) head.append(el('span', 'muted', subtitle));
@@ -51,9 +51,9 @@ const emptyNote = (text) => el('p', 'placeholder chart-empty', text || '这段�
 
 function statTiles(data) {
   const t = data.totals;
-  const tiles = el('div', 'tiles');
+  const tiles = el('div', 'glass tiles');
   const tile = (label, value, note) => {
-    const box = el('div', 'glass tile');
+    const box = el('div', 'tile');
     box.append(el('span', 'tile-label', label), el('strong', 'tile-value', value));
     if (note) box.append(el('span', 'tile-note', note));
     tiles.append(box);
@@ -312,7 +312,7 @@ async function loadDashboard() {
   const [trendTitle, trendSub] = TREND_TITLE[data.period];
   grid.append(categoryDonut(data));
   grid.append(stackedColumns(trendTitle, trendSub, data.trend, 'wide'));
-  if (data.period === 'day') grid.append(Object.assign(dayStrip(data), { className: 'glass chart-card full' }));
+  if (data.period === 'day') grid.append(Object.assign(dayStrip(data), { className: 'glass deep chart-card full' }));
   grid.append(
     barList('项目专注时间', '花在每个项目上的时长，颜色是它的主要活动类型',
       data.projects.map((p) => ({

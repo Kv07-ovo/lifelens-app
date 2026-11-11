@@ -72,8 +72,8 @@ function listSection(title, items, className) {
   return section;
 }
 
-function generateButton(label) {
-  const button = el('button', 'primary', label);
+function generateButton(label, primary) {
+  const button = el('button', primary ? 'primary' : '', label);
   button.type = 'button';
   button.addEventListener('click', async () => {
     button.disabled = true;
@@ -144,7 +144,7 @@ async function loadDiary() {
     nodes.push(el('p', 'placeholder', isToday
       ? `今天还没过完，目前有 ${data.summaries} 段记录。日记会在明天自动生成，也可以现在先生成一版。`
       : `这一天有 ${data.summaries} 段记录，还没有生成日记。`));
-    head.append(generateButton(isToday ? '现在生成' : '生成日记'));
+    head.append(generateButton(isToday ? '现在生成' : '生成日记', true));
   } else {
     nodes.push(el('p', 'placeholder', diaryDate > data.today ? '这一天还没到。' : '这一天没有记录，所以没有日记。'));
   }

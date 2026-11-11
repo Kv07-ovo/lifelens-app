@@ -90,7 +90,7 @@ function renderState(state) {
 
   const recording = state.capturing && !pausedNow;
   $('btn-toggle').textContent = recording ? '停止记录' : '恢复记录';
-  $('btn-toggle').classList.toggle('primary', !recording); // 只有“需要你点一下才能恢复”时才用主色
+  $('btn-toggle').classList.toggle('attention', !recording); // 没在记录时用提示色标出来；它不是页面的主操作
 
   // 顶部那一个合并的状态指示：一句话说清“在不在记录、模型在不在”，细节点开再看
   const modelOff = config.analysisEnabled && !model.online;

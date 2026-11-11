@@ -45,7 +45,9 @@ function todoItem(todo, closed) {
   } else {
     const done = linkButton('完成', () => api.setTodo(todo.id, 'done'));
     done.className = 'primary';
-    actions.append(done, linkButton('忽略', () => api.setTodo(todo.id, 'ignored')));
+    const ignore = linkButton('忽略', () => api.setTodo(todo.id, 'ignored'));
+    ignore.className = 'quiet';
+    actions.append(done, ignore);
   }
   item.append(actions);
   return item;

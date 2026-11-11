@@ -31,6 +31,7 @@
     <!-- 顶部状态条：页面标题、一个合并的状态指示、一个暂停控件 -->
     <header class="statusbar">
       <h2 class="page-title" id="page-title">今日</h2>
+      <div class="status-group">
       <details class="status" id="status">
         <summary id="status-pill" title="点击查看详细状态"><span class="status-dot" aria-hidden="true"></span><span id="status-text">正在启动…</span></summary>
         <div class="status-pop">
@@ -48,6 +49,7 @@
         <option value="180">暂停 3 小时</option>
       </select>
       <button type="button" id="btn-toggle">停止记录</button>
+      </div>
     </header>
 
     <!-- 只在需要用户处理的问题、或刚做完一个操作时出现 -->
@@ -75,119 +77,125 @@
     </main>
 
     <main class="records-view" id="view-records" hidden>
-      <div class="toolbar">
-        <span class="muted" id="summary"></span>
-        <button type="button" id="btn-now">立即截一张</button>
-        <button type="button" id="btn-retry" title="把分析失败的截图和汇总失败的时间段重新排队">重试失败项</button>
-      </div>
-      <section class="timeline" aria-label="最近记录">
-        <ol id="records" class="records"></ol>
-        <p id="empty" class="empty">还没有记录。开始截屏后，这里会按时间显示每次截屏（所有屏幕）和模型的总结。</p>
+      <section class="glass panel" aria-label="最近记录">
+        <div class="panel-head">
+          <span class="muted" id="summary"></span>
+          <button type="button" id="btn-now">立即截一张</button>
+          <button type="button" id="btn-retry" title="把分析失败的截图和汇总失败的时间段重新排队">重试失败项</button>
+        </div>
+        <div class="panel-body">
+          <ol id="records" class="records"></ol>
+          <p id="empty" class="empty">还没有记录。开始截屏后，这里会按时间显示每次截屏（所有屏幕）和模型的总结。</p>
+        </div>
       </section>
     </main>
 
     <main class="settings-view" id="view-settings" hidden>
       <form id="form">
         <div class="settings-grid">
-          <fieldset class="glass card">
-            <legend>截屏</legend>
-            <label>间隔（秒）
-              <input type="number" name="intervalSec" min="5" max="3600" required>
-            </label>
-            <label>无操作多少秒后暂停记录（画面没变时才暂停，0 为关闭）
-              <input type="number" name="idleSkipSec" min="0" max="3600">
-            </label>
-            <label>截图保留天数（含今天，更早的自动删除，文字记录保留；0 为不自动删除）
-              <input type="number" name="keepScreenshotDays" min="0" max="3650">
-            </label>
-            <label>每块屏幕图片的最大宽度（像素，0 为原始分辨率）
-              <input type="number" name="maxWidth" min="0" max="7680">
-            </label>
-            <label>JPEG 质量（30–100）
-              <input type="number" name="jpegQuality" min="30" max="100">
-            </label>
-            <label class="check"><input type="checkbox" name="autoStart"> 打开应用后自动开始截屏</label>
-            <label class="check"><input type="checkbox" name="skipWhenLocked"> 锁屏时不截屏</label>
-          </fieldset>
+          <div class="settings-col">
+            <fieldset class="glass card">
+              <legend>截屏</legend>
+              <label>间隔<small>秒</small>
+                <input type="number" name="intervalSec" min="5" max="3600" required>
+              </label>
+              <label>无操作多少秒后暂停记录<small>画面没变时才暂停，0 为关闭</small>
+                <input type="number" name="idleSkipSec" min="0" max="3600">
+              </label>
+              <label>截图保留天数<small>含今天，更早的自动删除，文字记录保留；0 为不自动删除</small>
+                <input type="number" name="keepScreenshotDays" min="0" max="3650">
+              </label>
+              <label>每块屏幕图片的最大宽度<small>像素，0 为原始分辨率</small>
+                <input type="number" name="maxWidth" min="0" max="7680">
+              </label>
+              <label>JPEG 质量<small>30–100</small>
+                <input type="number" name="jpegQuality" min="30" max="100">
+              </label>
+              <label class="check"><input type="checkbox" name="autoStart"> 打开应用后自动开始截屏</label>
+              <label class="check"><input type="checkbox" name="skipWhenLocked"> 锁屏时不截屏</label>
+            </fieldset>
 
-          <fieldset class="glass card">
-            <legend>本地模型</legend>
-            <label class="check"><input type="checkbox" name="analysisEnabled"> 用本地模型分析截图</label>
-            <label>服务地址
-              <input type="text" name="baseUrl" placeholder="http://127.0.0.1:8080/v1" required>
-            </label>
-            <label>模型名（留空自动使用当前加载的模型）
-              <input type="text" name="model">
-            </label>
-            <label>API Key（没设置就留空）
-              <input type="password" name="apiKey" autocomplete="off">
-            </label>
-            <label>提示词
-              <textarea name="prompt" rows="5"></textarea>
-            </label>
-            <div class="card-foot">
-              <span class="muted" id="form-msg" role="status"></span>
-              <button type="button" id="btn-test">测试连接</button>
-            </div>
-          </fieldset>
-
-          <fieldset class="glass card">
-            <legend>主动提醒</legend>
-            <label class="check"><input type="checkbox" name="nudgeMorning"> 早上：接着上次的来</label>
-            <label class="check"><input type="checkbox" name="nudgeTodos"> 白天：提醒可能漏掉的待办</label>
-            <label class="check"><input type="checkbox" name="nudgeEvening"> 晚上：今天的小结</label>
-            <label>晚上小结的时间
-              <input type="time" name="eveningTime">
-            </label>
-            <div class="card-foot">
-              <span></span>
-              <button type="button" id="btn-test-nudge">发一条测试提醒</button>
-            </div>
-          </fieldset>
-
-          <fieldset class="glass card">
-            <legend>多设备同步</legend>
-            <label class="check"><input type="checkbox" name="syncEnabled"> 用私有 Git 仓库同步文字记忆</label>
-            <label>仓库地址
-              <input type="text" name="syncRepo" placeholder="https://github.com/你的账号/lifelens-memory.git">
-            </label>
-            <label>这台电脑的名字
-              <input type="text" name="deviceName" placeholder="例如 笔记本、台式机">
-            </label>
-            <div class="card-foot">
-              <span class="muted" id="sync-status">只同步 10 分钟汇总和日记，截图和 20 秒记录留在本机。</span>
-              <button type="button" id="btn-sync">立即同步</button>
-            </div>
-          </fieldset>
-
-          <fieldset class="glass card">
-            <legend>数据</legend>
-            <label>数据目录
-              <span class="row">
-                <input type="text" name="dataDir" required>
-                <button type="button" id="btn-choose">选择</button>
-                <button type="button" id="btn-folder">打开</button>
-              </span>
-            </label>
-            <!-- 会删数据的操作集中在这里，和日常操作分开 -->
-            <div class="danger-zone">
-              <h3>清理</h3>
-              <p class="muted">这些操作删除后无法恢复，执行前都会再确认一次。</p>
-              <div class="danger-row">
-                <span>删除截图图片，保留文字记录</span>
-                <button type="button" class="danger" id="btn-clean">清理截图</button>
+            <fieldset class="glass card">
+              <legend>多设备同步</legend>
+              <label class="check"><input type="checkbox" name="syncEnabled"> 用私有 Git 仓库同步文字记忆</label>
+              <label>仓库地址
+                <input type="text" name="syncRepo" placeholder="https://github.com/你的账号/lifelens-memory.git">
+              </label>
+              <label>这台电脑的名字
+                <input type="text" name="deviceName" placeholder="例如 笔记本、台式机">
+              </label>
+              <div class="card-foot">
+                <span class="muted" id="sync-status">只同步 10 分钟汇总和日记，截图和 20 秒记录留在本机。</span>
+                <button type="button" id="btn-sync">立即同步</button>
               </div>
-              <div class="danger-row">
-                <span>删除最近一段时间的截图、记录和汇总</span>
-                <select id="delete-recent" class="menu danger" aria-label="删除最近的记录">
-                  <option value="">删除最近…</option>
-                  <option value="10">删除最近 10 分钟</option>
-                  <option value="30">删除最近 30 分钟</option>
-                  <option value="60">删除最近 1 小时</option>
-                </select>
+            </fieldset>
+          </div>
+
+          <div class="settings-col">
+            <fieldset class="glass card">
+              <legend>本地模型</legend>
+              <label class="check"><input type="checkbox" name="analysisEnabled"> 用本地模型分析截图</label>
+              <label>服务地址
+                <input type="text" name="baseUrl" placeholder="http://127.0.0.1:8080/v1" required>
+              </label>
+              <label>模型名<small>留空自动使用当前加载的模型</small>
+                <input type="text" name="model">
+              </label>
+              <label>API Key<small>没设置就留空</small>
+                <input type="password" name="apiKey" autocomplete="off">
+              </label>
+              <label>提示词
+                <textarea name="prompt" rows="5"></textarea>
+              </label>
+              <div class="card-foot">
+                <span class="muted" id="form-msg" role="status"></span>
+                <button type="button" id="btn-test">测试连接</button>
               </div>
-            </div>
-          </fieldset>
+            </fieldset>
+
+            <fieldset class="glass card">
+              <legend>主动提醒</legend>
+              <label class="check"><input type="checkbox" name="nudgeMorning"> 早上：接着上次的来</label>
+              <label class="check"><input type="checkbox" name="nudgeTodos"> 白天：提醒可能漏掉的待办</label>
+              <label class="check"><input type="checkbox" name="nudgeEvening"> 晚上：今天的小结</label>
+              <label>晚上小结的时间
+                <input type="time" name="eveningTime">
+              </label>
+              <div class="card-foot">
+                <span></span>
+                <button type="button" id="btn-test-nudge">发一条测试提醒</button>
+              </div>
+            </fieldset>
+
+            <fieldset class="glass card">
+              <legend>数据</legend>
+              <label>数据目录
+                <span class="row">
+                  <input type="text" name="dataDir" required>
+                  <button type="button" id="btn-choose">选择</button>
+                  <button type="button" id="btn-folder">打开</button>
+                </span>
+              </label>
+              <!-- 会删数据的操作集中在这里，和日常操作分开 -->
+              <div class="danger-zone">
+                <h3>清理</h3>
+                <p class="muted">这些操作删除后无法恢复，执行前都会再确认一次。</p>
+                <div class="danger-row">
+                  <span>删除截图图片，保留文字记录</span>
+                  <button type="button" class="danger" id="btn-clean">清理截图</button>
+                </div>
+                <div class="danger-row">
+                  <span>删除最近一段时间的截图、记录和汇总</span>
+                  <select id="delete-recent" class="menu danger" aria-label="删除最近的记录">
+                    <option value="">删除最近…</option>
+                    <option value="10">删除最近 10 分钟</option>
+                    <option value="30">删除最近 30 分钟</option>
+                    <option value="60">删除最近 1 小时</option>
+                  </select>
+                </div>
+              </div>
+            </fieldset>
+          </div>
         </div>
 
         <div class="save-bar">
@@ -218,12 +226,10 @@
             <li><i class="dot st-pending"></i>汇总中</li>
             <li><i class="dot st-none"></i>无记录</li>
           </ul>
-        </section>
-
-        <section class="glass card" aria-label="选中的时间段">
-          <h2>选中的 10 分钟</h2>
-          <div id="slot-detail" class="slot-detail">
-            <p class="placeholder">点上面的任意一个点，查看那 10 分钟在做什么。</p>
+          <div class="slot-block" aria-label="选中的时间段">
+            <div id="slot-detail" class="slot-detail">
+              <p class="placeholder">点上面的任意一个点，查看那 10 分钟在做什么。</p>
+            </div>
           </div>
         </section>
 
@@ -248,11 +254,11 @@
           <label>结束时间
             <input type="datetime-local" id="f-to">
           </label>
-          <button type="button" id="f-clear">清除筛选</button>
+          <button type="button" class="quiet" id="f-clear">清除筛选</button>
           <span class="muted" id="f-count" role="status"></span>
           <div class="tags active-apps" id="f-apps"></div>
         </form>
-        <div class="feed" id="feed">
+        <div class="glass feed" id="feed">
           <ol class="feed-list" id="feed-list"></ol>
           <p class="empty" id="feed-empty" hidden>还没有汇总。应用运行满 10 分钟、并且本地模型在线后，这里会出现每 10 分钟的活动。</p>
           <p class="muted feed-more" id="feed-more" hidden>加载中…</p>
@@ -280,7 +286,7 @@
         </section>
         <p class="glass card busy-note" id="diary-busy" hidden><span class="spinner" aria-hidden="true"></span><span id="diary-busy-text"></span></p>
       </div>
-      <section class="glass diary-page" id="diary-page" aria-label="日记内容"></section>
+      <section class="glass deep diary-page" id="diary-page" aria-label="日记内容"></section>
     </main>
 
     <main class="dashboard" id="view-dashboard" hidden>
@@ -301,7 +307,8 @@
     </main>
 
     <main class="qa" id="view-qa" hidden>
-      <section class="glass qa-chat" id="qa-chat" aria-label="对话" aria-live="polite">
+      <div class="glass deep qa-panel">
+      <section class="qa-chat" id="qa-chat" aria-label="对话" aria-live="polite">
         <div class="qa-intro" id="qa-intro">
           <h2>问问你的记录</h2>
           <p class="muted">本地模型会自己决定去截图分析、10 分钟汇总还是日记里搜索，最多搜 3 次，再根据搜到的内容回答。</p>
@@ -313,10 +320,11 @@
           </div>
         </div>
       </section>
-      <form class="glass qa-form" id="qa-form">
+      <form class="qa-form" id="qa-form">
         <textarea id="qa-input" rows="2" placeholder="输入问题，按 Enter 发送，Shift+Enter 换行" aria-label="问题"></textarea>
         <button type="submit" class="primary" id="qa-send">发送</button>
       </form>
+      </div>
     </main>
   </div>
 
