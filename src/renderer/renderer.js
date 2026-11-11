@@ -100,7 +100,10 @@ function renderState(state) {
   else if (pausedNow) { captureWord = '已暂停'; tone = 'warn'; }
   else if ((state.locked && config.skipWhenLocked) || state.idle) { captureWord = '待机中'; tone = 'warn'; }
   let statusText = captureWord;
-  if (modelOff) { statusText += ' · 模型离线'; tone = 'bad'; }
+  const launch = state.modelLaunch || { status: 'idle' };
+  const launching = modelOff && launch.status === 'starting';
+  if (launching) { statusText += ' · 模型启动中'; tone = 'warn'; }
+  else if (modelOff) { statusText += ' · 模型离线'; tone = 'bad'; }
   else if (busy) statusText += ' · 汇总中';
   else if (state.queueLength > 20) statusText += ` · ${state.queueLength} 张待分析`;
   $('status-text').textContent = statusText;
@@ -108,9 +111,12 @@ function renderState(state) {
 
   // 模型离线不是需要立刻处理的错误，不再占一整行横幅，只在状态详情里说明
   $('status-hint').hidden = !modelOff;
-  $('status-hint').textContent = modelOff
-    ? `连不上 ${config.baseUrl}。截图照常保存，模型上线后会自动补上分析和汇总。`
-    : '';
+  let hint = '';
+  if (launching) hint = '已经运行启动脚本，正在等模型加载。大模型可能要一两分钟，截图照常保存。';
+  else if (modelOff && launch.status === 'failed') hint = `模型没能启动：${launch.error}。截图照常保存，模型上线后会自动补上分析和汇总。`;
+  else if (modelOff) hint = `连不上 ${config.baseUrl}。截图照常保存，模型上线后会自动补上分析和汇总。`;
+  $('status-hint').textContent = hint;
+  $('btn-start-model').disabled = launch.status === 'starting';
 
   let notice = '';
   if (state.lastCaptureError) {
@@ -252,6 +258,22 @@ $('btn-test').addEventListener('click', async () => {
   } finally {
     $('btn-test').disabled = false;
   }
+});
+
+// 启动模型：先保存表单（脚本路径可能刚改过），再运行脚本。结果在右上角的状态里持续显示
+$('btn-start-model').addEventListener('click', async () => {
+  renderState(await api.saveConfig(readForm()));
+  const state = await api.startModel();
+  renderState(state);
+  const { model, modelLaunch } = state;
+  if (model.online) flash(`模型已经在线${model.model ? `：${model.model}` : ''}`);
+  else if (modelLaunch.status === 'failed') flash(`没能启动：${modelLaunch.error}`);
+  else flash('已经运行启动脚本，正在等模型加载…');
+});
+
+$('btn-choose-script').addEventListener('click', async () => {
+  const file = await api.chooseModelScript();
+  if (file) form.elements.modelStartScript.value = file;
 });
 
 $('btn-sync').addEventListener('click', async () => renderState(await api.syncNow()));

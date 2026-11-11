@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('lifelens', {
   captureNow: () => ipcRenderer.invoke('capture:now'),
   saveConfig: (config) => ipcRenderer.invoke('config:save', config),
   testModel: () => ipcRenderer.invoke('model:test'),
+  startModel: () => ipcRenderer.invoke('model:start'),
+  chooseModelScript: () => ipcRenderer.invoke('model:choose-script'),
   chooseFolder: () => ipcRenderer.invoke('folder:choose'),
   openFolder: () => ipcRenderer.invoke('folder:open'),
   openPath: (target) => ipcRenderer.invoke('path:open', target),

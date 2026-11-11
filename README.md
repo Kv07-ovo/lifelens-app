@@ -22,6 +22,7 @@
 - Windows 10 / 11（目前只在 Windows 上开发和测试过）
 - [Node.js](https://nodejs.org/) 22.12 或更高版本
 - 一个提供 OpenAI 兼容接口、**支持图片输入**的本地模型服务，例如带 `--mmproj` 的 llama.cpp `llama-server`，默认地址 `http://127.0.0.1:8080/v1`。模型还需要支持 `response_format` 的 `json_schema` 结构化输出。
+- 可选：在“设置 → 本地模型”里选一个启动脚本（`.ps1`、`.cmd`、`.bat` 或 `.exe`）并勾选“打开 LifeLens 时自动启动模型”。打开应用时如果模型服务不在线，LifeLens 会运行这个脚本并等服务上线；模型不会随 LifeLens 退出而关闭。
 - 使用多设备同步时需要安装 Git，并能免交互访问你的仓库。
 
 ## 开始使用
@@ -70,6 +71,7 @@ LifeLens 会截下屏幕上的一切，包括密码、聊天内容和私人文�
 | `src/main.js` | 主进程：定时截屏、分析队列、窗口与托盘 |
 | `src/capture.js` | 多屏截图 |
 | `src/analyzer.js` | 调用本地模型分析截图 |
+| `src/launcher.js` | 运行用户选的脚本来启动本地模型 |
 | `src/storage.js` | 按月 / 小时存储记录，清理截图 |
 | `src/summarizer.js` | 10 分钟汇总 |
 | `src/diary.js` | 日记 |

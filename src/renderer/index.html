@@ -147,9 +147,19 @@
               <label>提示词
                 <textarea name="prompt" rows="5"></textarea>
               </label>
+              <label>启动脚本<small>启动你本地模型的 .ps1、.cmd、.bat 或 .exe；想换模型就换一个脚本</small>
+                <span class="row">
+                  <input type="text" name="modelStartScript" placeholder="没有选择">
+                  <button type="button" id="btn-choose-script">选择</button>
+                </span>
+              </label>
+              <label class="check"><input type="checkbox" name="modelAutoStart"> 打开 LifeLens 时自动启动模型</label>
               <div class="card-foot">
                 <span class="muted" id="form-msg" role="status"></span>
-                <button type="button" id="btn-test">测试连接</button>
+                <span class="row">
+                  <button type="button" id="btn-start-model">启动模型</button>
+                  <button type="button" id="btn-test">测试连接</button>
+                </span>
               </div>
             </fieldset>
 
