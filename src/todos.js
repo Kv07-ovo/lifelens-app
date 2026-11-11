@@ -15,7 +15,7 @@ const SAME = 0.6; // 相似度达到这个值就认为是同一件事
 const REOPEN_AFTER_MS = 6 * HOUR_MS; // 勾掉之后隔了这么久又被检测到，说明事情其实没做完，重新打开
 const EXPIRE_AFTER_MS = 3 * 24 * HOUR_MS; // 这么久没再出现的待办自动过期，不再显示
 const FORGET_CLOSED_AFTER_MS = 30 * 24 * HOUR_MS; // 完成、忽略或过期超过这么久的条目彻底清掉
-const REMIND_AFTER_MS =2 * HOUR_MS; // 出现这么久还没处理，可以提醒一次
+const REMIND_AFTER_MS = 2 * HOUR_MS; // 出现这么久还没处理，可以提醒一次
 const REMIND_AFTER_COUNT = 3; // 或者在这么多个时间段里都被检测到
 
 /** 去掉空白和标点，只留下用来比较的内容 */
@@ -135,8 +135,24 @@ function createTodos({ getConfig, onChange }) {
   return {
     async load() {
       loaded = false;
-      const data = await fs.readFile(file(), 'utf8').then(JSON.parse).catch(() => null);
-      items = data && Array.isArray(data.items) ? data.items : [];
+      items = [];
+      let text = null;
+      try {
+        text = await fs.readFile(file(), 'utf8');
+      } catch (err) {
+        // 文件不存在是正常的（第一次用）。其他读取错误（比如被占用）：保持“未加载”，
+        // 这样不会接受新待办、也就不会把读不出来的原文件覆盖掉；下次启动或保存设置时会再读
+        if (err.code !== 'ENOENT') return;
+      }
+      if (text !== null) {
+        try {
+          const data = JSON.parse(text);
+          if (data && Array.isArray(data.items)) items = data.items;
+        } catch {
+          // 内容损坏：把坏文件改名保留，然后从空的收件箱开始
+          await fs.rename(file(), `${file()}.corrupt-${Date.now()}`).catch(() => {});
+        }
+      }
       // 关掉很久的旧条目不再保留：文件不会无限变大，“忽略”也不会永久屏蔽以后相似的新待办
       const now = Date.now();
       items = items.filter((item) => item.status === 'open' || now - (item.closedAt || 0) < FORGET_CLOSED_AFTER_MS);
