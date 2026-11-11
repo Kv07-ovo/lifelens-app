@@ -57,7 +57,7 @@ function launch(script) {
     child.once('error', (err) => resolve({ ok: false, error: `启动脚本运行不了：${err.message}` }));
     child.once('spawn', () => {
       child.unref();
-      resolve({ ok: true });
+      resolve({ ok: true, child }); // 调用方可以监听 exit：脚本报错退出时不用干等
     });
   });
 }

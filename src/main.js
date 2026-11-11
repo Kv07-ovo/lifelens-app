@@ -505,6 +505,13 @@ async function startModel() {
   }
   const deadline = Date.now() + LAUNCH_WAIT_MS;
   clearInterval(launchTimer);
+  // 脚本自己报错退出（比如端口被占用）时马上说明，不用等满 5 分钟
+  result.child.once('exit', (code) => {
+    if (!code || state.modelLaunch.status !== 'starting' || state.model.online) return;
+    clearInterval(launchTimer);
+    state.modelLaunch = { status: 'failed', error: `启动脚本报错退出（退出码 ${code}）。单独运行一次这个脚本可以看到具体原因` };
+    broadcastState();
+  });
   launchTimer = setInterval(async () => {
     await refreshModel();
     if (state.model.online) {
