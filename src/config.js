@@ -20,6 +20,8 @@ const DEFAULTS = {
   baseUrl: 'http://127.0.0.1:8080/v1', // Strata 的 OpenAI 兼容接口
   model: '',                  // 留空 = 自动使用服务当前加载的模型
   apiKey: '',                 // Strata 设置了 API key 时填写
+  modelAutoStart: false,      // 打开应用时，如果模型服务不在线，就运行下面的启动脚本
+  modelStartScript: '',       // 启动本地模型的脚本（.ps1 / .cmd / .bat / .exe 的完整路径）
   reasoningEffort: 'none',    // 关闭思考，回答更快
   maxTokens: 512,
   requestTimeoutSec: 180,
@@ -66,6 +68,8 @@ function normalize(raw) {
   c.baseUrl = String(c.baseUrl || '').trim().replace(/\/+$/, '') || DEFAULTS.baseUrl;
   c.model = String(c.model || '').trim();
   c.apiKey = String(c.apiKey || '').trim();
+  c.modelAutoStart = !!c.modelAutoStart;
+  c.modelStartScript = String(c.modelStartScript || '').trim();
   c.reasoningEffort = String(c.reasoningEffort || '').trim();
   c.prompt = String(c.prompt || '').trim() || DEFAULT_PROMPT;
   c.nudgeMorning = !!c.nudgeMorning;

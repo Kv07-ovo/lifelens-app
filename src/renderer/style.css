@@ -317,6 +317,7 @@ select option { background: #10343b; color: #fff; }
 
 .row { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
 .row input { margin-top: 0; flex: 1; min-width: 0; }
+.card-foot .row { margin-top: 0; flex: none; }
 
 /* 状态类标签 */
 .chip {

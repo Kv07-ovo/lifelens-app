@@ -8,6 +8,7 @@ const { pathToFileURL } = require('url');
 const configStore = require('./config');
 const storage = require('./storage');
 const analyzer = require('./analyzer');
+const launcher = require('./launcher');
 const { captureScreens, sameScreens } = require('./capture');
 const { renderIcon } = require('./icon');
 const { createSummarizer, slotStart, SLOT_MS } = require('./summarizer');
@@ -24,6 +25,8 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 const PROBE_INTERVAL_MS = 15000;
+const LAUNCH_WAIT_MS = 5 * 60 * 1000; // 运行启动脚本后，最多等这么久让模型服务上线
+const LAUNCH_POLL_MS = 5000;
 const SUMMARY_TICK_MS = 30000; // 每 30 秒看一次有没有新结束的 10 分钟时间段
 const PAUSE_SHORTCUT = 'Ctrl+Alt+P'; // 全局快捷键：不用切到 LifeLens 窗口就能停止 / 恢复记录
 const SYNC_INTERVAL_MS =10 * 60 * 1000;
@@ -52,6 +55,7 @@ const state = {
   analyzedCount: 0,
   currentId: null,
   model: { online: false, model: null, vision: null, loaded: null, error: null },
+  modelLaunch: { status: 'idle', error: null }, // 启动脚本的状态：idle / starting / failed
 };
 
 // 本地模型一次只处理一个请求：截图分析和 10 分钟汇总共用这把锁
@@ -477,6 +481,45 @@ async function refreshModel() {
   if (state.model.online && queue.length) pump();
 }
 
+/* ---------- 启动本地模型 ---------- */
+
+let launchTimer = null;
+
+// 模型不在线时运行用户选的启动脚本，然后每隔几秒看一次服务上线没有。
+// 已经在线就什么都不做；脚本只负责启动，模型不随 LifeLens 退出。
+async function startModel() {
+  if (state.modelLaunch.status === 'starting') return;
+  state.model = await analyzer.probe(config);
+  if (state.model.online) {
+    state.modelLaunch = { status: 'idle', error: null };
+    broadcastState();
+    return;
+  }
+  state.modelLaunch = { status: 'starting', error: null };
+  broadcastState();
+  const result = await launcher.launch(config.modelStartScript);
+  if (!result.ok) {
+    state.modelLaunch = { status: 'failed', error: result.error };
+    broadcastState();
+    return;
+  }
+  const deadline = Date.now() + LAUNCH_WAIT_MS;
+  clearInterval(launchTimer);
+  launchTimer = setInterval(async () => {
+    await refreshModel();
+    if (state.model.online) {
+      clearInterval(launchTimer);
+      state.modelLaunch = { status: 'idle', error: null };
+    } else if (Date.now() > deadline) {
+      clearInterval(launchTimer);
+      state.modelLaunch = { status: 'failed', error: '启动脚本已经运行，但模型服务 5 分钟内没有上线。检查脚本能不能单独运行，以及服务地址对不对' };
+    } else {
+      return;
+    }
+    broadcastState();
+  }, LAUNCH_POLL_MS);
+}
+
 async function restorePending() {
   if (!config.analysisEnabled) return;
   const pending = await storage.listPending(config.dataDir, config.maxQueue).catch(() => []);
@@ -670,6 +713,20 @@ function registerIpc() {
     await refreshModel();
     return snapshot();
   });
+  ipcMain.handle('model:start', async () => {
+    await startModel();
+    return snapshot();
+  });
+  ipcMain.handle('model:choose-script', async () => {
+    const current = config.modelStartScript;
+    const result = await dialog.showOpenDialog(win, {
+      title: '选择启动本地模型的脚本',
+      defaultPath: current ? path.dirname(current) : undefined,
+      properties: ['openFile'],
+      filters: [{ name: '启动脚本', extensions: launcher.ALLOWED.map((ext) => ext.slice(1)) }],
+    });
+    return result.canceled ? null : result.filePaths[0];
+  });
   ipcMain.handle('folder:choose', async () => {
     const result = await dialog.showOpenDialog(win, {
       title: '选择数据目录',
@@ -728,7 +785,9 @@ if (!app.requestSingleInstanceLock()) {
 
     await restorePending();
     if (config.autoStart) setCapturing(true);
-    refreshModel();
+    // 打开应用时自动启动模型：只在开了这个选项、并且模型服务确实不在线时才运行脚本
+    if (config.analysisEnabled && config.modelAutoStart) startModel();
+    else refreshModel();
     setInterval(refreshModel, PROBE_INTERVAL_MS);
     // 待办要先于汇总器加载：汇总器一开始工作就可能往待办里收东西
     await todos.load();
