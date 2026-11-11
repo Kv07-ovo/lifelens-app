@@ -62,8 +62,9 @@ async function probe(config) {
     });
     if (health && health.service === 'strata') {
       status.model = health.model || null;
-      status.vision = !!health.images;
       status.loaded = !!health.loaded;
+      // 模型还在加载时服务会报“不能读图”，那只是还不知道，不能当成“不支持读图”
+      status.vision = status.loaded ? !!health.images : null;
     }
     const models = await requestJson(`${config.baseUrl}/models`, { apiKey: config.apiKey, timeoutMs: 4000 });
     const textModels = ((models && models.data) || []).filter(

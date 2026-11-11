@@ -102,19 +102,23 @@ function renderState(state) {
   let statusText = captureWord;
   const launch = state.modelLaunch || { status: 'idle' };
   const launching = modelOff && launch.status === 'starting';
+  // 服务已经连上，但模型还没加载完（刚启动的一两分钟）
+  const modelLoading = config.analysisEnabled && model.online && model.loaded === false;
   if (launching) { statusText += ' · 模型启动中'; tone = 'warn'; }
   else if (modelOff) { statusText += ' · 模型离线'; tone = 'bad'; }
+  else if (modelLoading) { statusText += ' · 模型加载中'; tone = 'warn'; }
   else if (busy) statusText += ' · 汇总中';
   else if (state.queueLength > 20) statusText += ` · ${state.queueLength} 张待分析`;
   $('status-text').textContent = statusText;
   $('status-pill').className = `tone-${tone}`;
 
   // 模型离线不是需要立刻处理的错误，不再占一整行横幅，只在状态详情里说明
-  $('status-hint').hidden = !modelOff;
+  $('status-hint').hidden = !modelOff && !modelLoading;
   let hint = '';
   if (launching) hint = '已经运行启动脚本，正在等模型加载。大模型可能要一两分钟，截图照常保存。';
   else if (modelOff && launch.status === 'failed') hint = `模型没能启动：${launch.error}。截图照常保存，模型上线后会自动补上分析和汇总。`;
   else if (modelOff) hint = `连不上 ${config.baseUrl}。截图照常保存，模型上线后会自动补上分析和汇总。`;
+  else if (modelLoading) hint = '模型服务已经连上，模型还在加载。加载完会自动开始分析，截图照常保存。';
   $('status-hint').textContent = hint;
   $('btn-start-model').disabled = launch.status === 'starting';
 
@@ -253,6 +257,7 @@ $('btn-test').addEventListener('click', async () => {
     renderState(state);
     const { model } = state;
     if (!model.online) flash(`连接失败：${model.error || '未知错误'}`);
+    else if (model.loaded === false) flash('已连接，模型还在加载');
     else if (model.vision === false) flash('已连接，但 Strata 没有开启读图');
     else flash(`已连接${model.model ? `：${model.model}` : ''}`);
   } finally {
