@@ -36,6 +36,7 @@ npm start
 
 ```bash
 npm run release
+```
 
 做一个可以发给别人的安装包（双击即可安装，带桌面图标和卸载入口）：
 
@@ -44,7 +45,6 @@ npm run dist
 ```
 
 产物在 `dist/installer/LifeLens-Setup-版本号.exe`。安装包没有代码签名，第一次运行时 Windows 可能提示“已保护你的电脑”，点“更多信息 → 仍要运行”即可。在中国大陆构建较慢时，可以设置 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`。
-```
 
 在中国大陆下载 Electron 较慢时，可以先设置环境变量 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`。
 
