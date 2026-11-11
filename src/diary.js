@@ -7,6 +7,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const storage = require('./storage');
+const { duration, dayRange } = require('./timefmt');
 const { OfflineError } = require('./analyzer');
 const { chatJson, extractJson, CATEGORIES } = require('./summarizer');
 
@@ -40,21 +41,11 @@ const SCHEMA = {
 
 const today = () => storage.parts(new Date()).date;
 
-function dayStart(date) {
-  const [y, m, d] = date.split('-').map(Number);
-  return new Date(y, m - 1, d).getTime();
-}
-
-const dayEnd = (date) => {
-  const [y, m, d] = date.split('-').map(Number);
-  return new Date(y, m - 1, d + 1).getTime();
-};
-
 function diaryFile(dataDir, date) {
   return path.join(dataDir, date.slice(0, 7), 'diary', `${date}.json`);
 }
 
-const minutesText = (minutes) => (minutes >= 60 ? `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分钟` : `${minutes} 分钟`);
+const minutesText = duration;
 
 /** 这一天的基础统计：各分类时长、各项目时长、用到的软件 */
 function dayStats(entries) {
@@ -193,7 +184,7 @@ function createDiary({ getConfig, getModelName, withModel, summarizer, onChange,
   async function generate(date) {
     const config = getConfig();
     const gen = generation;
-    const entries = await summarizer.fullRange(dayStart(date), dayEnd(date));
+    const entries = await summarizer.fullRange(...dayRange(date));
     if (!entries.length) throw new Error('这一天没有可用的 10 分钟汇总');
     const stats = dayStats(entries);
     const prompt = buildPrompt(date, entries, stats);

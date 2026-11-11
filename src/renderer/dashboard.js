@@ -13,11 +13,7 @@ function svg(tag, attrs) {
   return node;
 }
 
-function duration(minutes) {
-  if (!minutes) return '0 分钟';
-  if (minutes < 60) return `${minutes} 分钟`;
-  return minutes % 60 ? `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分` : `${minutes / 60} 小时`;
-}
+const duration = formatMinutes; // 共用 renderer.js 里的实现
 
 const shortDuration = (minutes) => (minutes < 60 ? `${minutes}分` : `${+(minutes / 60).toFixed(1)}时`);
 const percent = (part, whole) => (whole ? `${Math.round((part / whole) * 100)}%` : '0%');

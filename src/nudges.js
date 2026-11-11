@@ -14,6 +14,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const storage = require('./storage');
+const { duration, dayRange } = require('./timefmt');
 const { CATEGORIES } = require('./summarizer');
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -24,17 +25,6 @@ const TODO_GAP_MS = HOUR_MS;
 
 const dateOf = (ms) => storage.parts(new Date(ms)).date;
 const logicalDate = (now) => dateOf(now - DAY_STARTS_AT_HOUR * HOUR_MS);
-
-function duration(minutes) {
-  const m = Math.round(minutes);
-  if (m < 60) return `${m} 分钟`;
-  return m % 60 ? `${Math.floor(m / 60)} 小时 ${m % 60} 分` : `${m / 60} 小时`;
-}
-
-function dayRange(date) {
-  const [y, m, d] = date.split('-').map(Number);
-  return [new Date(y, m - 1, d).getTime(), new Date(y, m - 1, d + 1).getTime()];
-}
 
 function createNudges({ getConfig, summarizer, diary, todos, notify, getIdleSeconds, isRecording }) {
   let state = { date: '', morning: false, evening: false, sent: 0, snoozed: false, lastTodoAt: 0 };
@@ -130,7 +120,8 @@ function createNudges({ getConfig, summarizer, diary, todos, notify, getIdleSeco
 
       // 晚上：到了设定的收工时间，今天有记录才提
       const [eh, em] = config.eveningTime.split(':').map(Number);
-      const eveningAt = dayRange(day)[0] + eh * HOUR_MS + em * 60000;
+      // 一天从凌晨 5 点算起，所以设成 00:00–04:59 的时间指的是“第二天凌晨”，要加一天
+      const eveningAt = dayRange(day)[0] + eh * HOUR_MS + em * 60000 + (eh < DAY_STARTS_AT_HOUR ? DAY_MS : 0);
       if (!state.evening && now >= eveningAt) {
         state.evening = true;
         save();
