@@ -14,11 +14,16 @@ let activityOpened = false;
 /* ---------- 标签页切换 ---------- */
 
 function showView(name) {
-  for (const tab of document.querySelectorAll('.tab[data-view]')) {
-    const active = tab.dataset.view === name;
-    tab.classList.toggle('active', active);
-    tab.setAttribute('aria-selected', String(active));
-    $(`view-${tab.dataset.view}`).hidden = !active;
+  for (const item of document.querySelectorAll('.nav-item[data-view]')) {
+    const active = item.dataset.view === name;
+    item.classList.toggle('active', active);
+    if (active) {
+      item.setAttribute('aria-current', 'page');
+      $('page-title').textContent = item.textContent;
+    } else {
+      item.removeAttribute('aria-current');
+    }
+    $(`view-${item.dataset.view}`).hidden = !active;
   }
   if (name === 'activity' && !activityOpened) {
     activityOpened = true;
@@ -28,8 +33,8 @@ function showView(name) {
   document.dispatchEvent(new CustomEvent('view-open', { detail: name }));
 }
 
-for (const tab of document.querySelectorAll('.tab[data-view]')) {
-  tab.addEventListener('click', () => showView(tab.dataset.view));
+for (const item of document.querySelectorAll('.nav-item[data-view]')) {
+  item.addEventListener('click', () => showView(item.dataset.view));
 }
 
 /* ---------- 一条汇总的展示（热力图详情和时间线共用） ---------- */
@@ -47,7 +52,7 @@ function renderSummary(entry, compact) {
   if (entry.device) {
     head.append(el('span', 'chip', `来自 ${entry.device}`)); // 其他设备同步过来的记录，只能在那台电脑上删
   } else {
-    const remove = el('button', 'tag danger', '删除这段记录');
+    const remove = el('button', 'quiet row-delete', '删除这段记录');
     remove.type = 'button';
     remove.title = '删除这 10 分钟的截图、截屏记录和汇总';
     remove.addEventListener('click', async () => {
@@ -236,7 +241,7 @@ async function loadFeed(reset) {
     const result = await api.querySummaries({ ...filter, before: reset ? null : nextBefore, limit: PAGE_SIZE });
     if (token !== queryToken) return; // 筛选条件又变了，丢弃这次结果
     const items = result.items.map((entry) => {
-      const li = el('li', 'glass feed-item');
+      const li = el('li', 'feed-item');
       li.append(renderSummary(entry, true));
       return li;
     });

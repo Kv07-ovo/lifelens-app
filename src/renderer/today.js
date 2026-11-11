@@ -45,7 +45,9 @@ function todoItem(todo, closed) {
   } else {
     const done = linkButton('完成', () => api.setTodo(todo.id, 'done'));
     done.className = 'primary';
-    actions.append(done, linkButton('忽略', () => api.setTodo(todo.id, 'ignored')));
+    const ignore = linkButton('忽略', () => api.setTodo(todo.id, 'ignored'));
+    ignore.className = 'quiet';
+    actions.append(done, ignore);
   }
   item.append(actions);
   return item;
@@ -55,30 +57,46 @@ async function loadToday() {
   const data = await api.today();
 
   // 今天
-  const now = [el('h2', '', '今天')];
+  // 最重要的一个数放在最上面、最大；旁边是时间分配，下面是具体项目
   if (data.today) {
-    now.push(el('p', 'today-big', minutesText(data.today.minutes)), el('p', 'muted', '实际在用电脑的时间'));
-    now.push(categoryChips(data.today.byCategory), projectList(data.today.projects));
+    const hero = el('div', 'today-hero');
+    const figure = el('div', 'today-figure');
+    figure.append(el('p', 'muted', '今天实际在用电脑'), el('p', 'today-big', minutesText(data.today.minutes)));
+    const split = el('div', 'today-split');
+    const bar = el('div', 'cat-bar');
+    for (const name of ['工作', '学习', '娱乐', '社交']) {
+      const minutes = data.today.byCategory[name];
+      if (!minutes) continue;
+      const seg = el('i', `seg ${CATEGORY_CLASS[name]}`);
+      seg.style.flexGrow = String(minutes);
+      seg.title = `${name} ${minutesText(minutes)}`;
+      bar.append(seg);
+    }
+    split.append(bar, categoryChips(data.today.byCategory));
+    hero.append(figure, split);
+    $('today-now').replaceChildren(hero, projectList(data.today.projects));
   } else {
-    now.push(el('p', 'placeholder', '今天还没有汇总。用上 10 分钟之后，这里会显示今天的时间分配。'));
+    $('today-now').replaceChildren(
+      el('p', 'muted', '今天实际在用电脑'),
+      el('p', 'today-big', '—'),
+      el('p', 'placeholder', '用上 10 分钟、并且模型在线之后，这里会显示今天的时间分配。')
+    );
   }
-  $('today-now').replaceChildren(...now);
 
-  // 接着上次的来
-  const prev = [el('h2', '', '接着上次的来')];
+  // 接着上次的来：没有之前的记录时整块不显示，不留一张空卡片
+  $('today-prev').hidden = !data.previous;
   if (data.previous) {
     const p = data.previous;
-    prev.push(el('p', '', `${p.label}记录了 ${minutesText(p.minutes)}，${p.lastAt} 结束时在做的是：`));
-    prev.push(el('p', 'today-last', p.lastProject));
+    const head = el('div', 'section-head');
+    head.append(el('h2', '', '接着上次的来'), el('span', 'muted', `${p.label} · 记录了 ${minutesText(p.minutes)}`));
+    const prev = [head, el('p', 'muted', `${p.lastAt} 结束时在做的是`), el('p', 'today-last', p.lastProject)];
     if (p.highlight) prev.push(el('p', 'muted', `高光：${p.highlight}`));
     prev.push(projectList(p.projects));
-    const actions = el('div', 'form-actions');
-    actions.append(linkButton(p.hasDiary ? `看${p.label}的日记` : `去生成${p.label}的日记`, () => showView('diary')));
+    const actions = el('div', 'card-foot');
+    actions.append(el('span'), linkButton(p.hasDiary ? `看${p.label}的日记` : `去生成${p.label}的日记`, () => showView('diary')));
     prev.push(actions);
-  } else {
-    prev.push(el('p', 'placeholder', '还没有之前的记录。明天早上这里会告诉你今天做到了哪里。'));
+    $('today-prev').replaceChildren(...prev);
   }
-  $('today-prev').replaceChildren(...prev);
 
   // 待办收件箱
   const { open, closed } = data.todos;
