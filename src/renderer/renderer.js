@@ -88,15 +88,35 @@ function renderState(state) {
   $('sync-status').textContent = syncText;
   $('btn-sync').disabled = !config.syncEnabled || sync.state === 'syncing';
 
-  $('btn-toggle').textContent = state.capturing && !pausedNow ? '停止截屏' : '恢复截屏';
+  const recording = state.capturing && !pausedNow;
+  $('btn-toggle').textContent = recording ? '停止记录' : '恢复记录';
+  $('btn-toggle').classList.toggle('primary', !recording); // 只有“需要你点一下才能恢复”时才用主色
+
+  // 顶部那一个合并的状态指示：一句话说清“在不在记录、模型在不在”，细节点开再看
+  const modelOff = config.analysisEnabled && !model.online;
+  let captureWord = '记录中';
+  let tone = 'ok';
+  if (!state.capturing) { captureWord = '已停止'; tone = 'off'; }
+  else if (pausedNow) { captureWord = '已暂停'; tone = 'warn'; }
+  else if ((state.locked && config.skipWhenLocked) || state.idle) { captureWord = '待机中'; tone = 'warn'; }
+  let statusText = captureWord;
+  if (modelOff) { statusText += ' · 模型离线'; tone = 'bad'; }
+  else if (busy) statusText += ' · 汇总中';
+  else if (state.queueLength > 20) statusText += ` · ${state.queueLength} 张待分析`;
+  $('status-text').textContent = statusText;
+  $('status-pill').className = `tone-${tone}`;
+
+  // 模型离线不是需要立刻处理的错误，不再占一整行横幅，只在状态详情里说明
+  $('status-hint').hidden = !modelOff;
+  $('status-hint').textContent = modelOff
+    ? `连不上 ${config.baseUrl}。截图照常保存，模型上线后会自动补上分析和汇总。`
+    : '';
 
   let notice = '';
   if (state.lastCaptureError) {
     notice = `截屏出错：${state.lastCaptureError}`;
-  } else if (config.analysisEnabled && !model.online) {
-    notice = `连不上本地模型服务 ${config.baseUrl}。截图会照常保存并标记为“等待分析”，Strata 启动并加载模型后会自动补上总结。`;
-  } else if (config.analysisEnabled && model.vision === false) {
-    notice = 'Strata 当前没有开启读图（图片读取），模型看不到截图。请在 Strata 里打开读取图片后重新加载模型。';
+  } else if (config.analysisEnabled && model.online && model.vision === false) {
+    notice = '当前加载的模型没有开启读图，看不到截图。请加载带视觉能力的模型，或在模型服务里打开图片读取。';
   }
   // 清理截图的结果提示保留一会儿
   if (!notice && cleanNote && Date.now() < cleanNote.until) notice = cleanNote.text;
@@ -214,7 +234,8 @@ form.addEventListener('submit', async (event) => {
   const state = await api.saveConfig(readForm());
   fillForm(state.config);
   renderState(state);
-  flash('已保存');
+  $('save-msg').textContent = '已保存';
+  setTimeout(() => { $('save-msg').textContent = ''; }, 4000);
   loadRecords();
 });
 
@@ -280,6 +301,11 @@ $('btn-clean').addEventListener('click', async () => {
   }
   refreshUsage();
 });
+// 状态详情：点别处就收起
+document.addEventListener('click', (event) => {
+  if (!$('status').contains(event.target)) $('status').open = false;
+});
+
 /* ---------- 暂停一会儿、删除一段记录 ---------- */
 
 function showNote(text) {

@@ -14,11 +14,16 @@ let activityOpened = false;
 /* ---------- 标签页切换 ---------- */
 
 function showView(name) {
-  for (const tab of document.querySelectorAll('.tab[data-view]')) {
-    const active = tab.dataset.view === name;
-    tab.classList.toggle('active', active);
-    tab.setAttribute('aria-selected', String(active));
-    $(`view-${tab.dataset.view}`).hidden = !active;
+  for (const item of document.querySelectorAll('.nav-item[data-view]')) {
+    const active = item.dataset.view === name;
+    item.classList.toggle('active', active);
+    if (active) {
+      item.setAttribute('aria-current', 'page');
+      $('page-title').textContent = item.textContent;
+    } else {
+      item.removeAttribute('aria-current');
+    }
+    $(`view-${item.dataset.view}`).hidden = !active;
   }
   if (name === 'activity' && !activityOpened) {
     activityOpened = true;
@@ -28,8 +33,8 @@ function showView(name) {
   document.dispatchEvent(new CustomEvent('view-open', { detail: name }));
 }
 
-for (const tab of document.querySelectorAll('.tab[data-view]')) {
-  tab.addEventListener('click', () => showView(tab.dataset.view));
+for (const item of document.querySelectorAll('.nav-item[data-view]')) {
+  item.addEventListener('click', () => showView(item.dataset.view));
 }
 
 /* ---------- 一条汇总的展示（热力图详情和时间线共用） ---------- */
