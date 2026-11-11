@@ -10,10 +10,40 @@
     "icon": "node scripts/make-icon.js",
     "pack": "node scripts/pack.js",
     "install-app": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1",
-    "release": "npm run icon && npm run pack && npm run install-app"
+    "release": "npm run icon && npm run pack && npm run install-app",
+    "installer": "electron-builder --win nsis --prepackaged dist/LifeLens-win32-x64",
+    "dist": "npm run icon && npm run pack && npm run installer"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
-    "electron": "^45.2.3"
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
+  },
+  "author": "LifeLens",
+  "build": {
+    "appId": "com.lifelens.app",
+    "productName": "LifeLens",
+    "directories": {
+      "output": "dist/installer",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "LifeLens",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "language": "2052",
+      "artifactName": "LifeLens-Setup-${version}.exe"
+    }
   }
 }
