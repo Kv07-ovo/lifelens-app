@@ -1,9 +1,6 @@
 /* “今日”页：今天的概况、接着上次的来、待办收件箱。依赖 renderer.js 的 api / $ / el，activity.js 的 CATEGORY_CLASS / showView */
 
-function minutesText(minutes) {
-  if (minutes < 60) return `${minutes} 分钟`;
-  return minutes % 60 ? `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分` : `${minutes / 60} 小时`;
-}
+const minutesText = formatMinutes; // 共用 renderer.js 里的实现
 
 const clockText = (ms) => {
   const d = new Date(ms);

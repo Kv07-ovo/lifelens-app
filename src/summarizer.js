@@ -458,7 +458,11 @@ function createSummarizer({ getConfig, getModelName, withModel, isAnalysisQueued
     await writeEntry(config.dataDir, entry);
     index.set(id, light(entry));
     retryLater.delete(id);
-    onSummary(entry); // 新的汇总出来了（待办收件箱靠它收集待办）
+    try {
+      onSummary(entry); // 新的汇总出来了（待办收件箱靠它收集待办）
+    } catch {
+      // 汇总本身已经成功写好了。收待办出错不能让这次汇总被当成失败、再调一次模型甚至被错误状态覆盖
+    }
   }
 
   async function pump() {

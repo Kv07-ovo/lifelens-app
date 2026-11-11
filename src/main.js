@@ -209,7 +209,7 @@ const nudges = createNudges({
 /** 把最近几天的汇总里的待办补收一遍（启动时、从其他设备同步到新数据时）。重复收不会重复计数 */
 async function collectRecentTodos() {
   const now = Date.now();
-  for (const entry of await summarizer.fullRange(now - 3 * 24 * 60 * 60 * 1000, now)) todos.ingest(entry);
+  todos.ingest(await summarizer.fullRange(now - 3 * 24 * 60 * 60 * 1000, now)); // 一批一起收，只写一次盘
 }
 
 const qa = createQa({
@@ -582,10 +582,12 @@ function registerIpc() {
     scheduleNext();
     await restorePending();
     await refreshModel();
-    await summarizer.reload();
-    await diary.reload();
+    // 待办要先于汇总器加载：汇总器一开始工作就可能往待办里收东西
     await todos.load(); // 数据目录可能换了
     await nudges.load();
+    await summarizer.reload();
+    await diary.reload();
+    await collectRecentTodos();
     sync.run();
     return snapshot();
   });
@@ -728,14 +730,15 @@ if (!app.requestSingleInstanceLock()) {
     if (config.autoStart) setCapturing(true);
     refreshModel();
     setInterval(refreshModel, PROBE_INTERVAL_MS);
+    // 待办要先于汇总器加载：汇总器一开始工作就可能往待办里收东西
+    await todos.load();
+    await nudges.load();
     await summarizer.reload(); // 补上应用没开时漏掉的 10 分钟汇总
     await diary.reload();
     setInterval(() => summarizer.tick(), SUMMARY_TICK_MS);
     sync.run(); // 启动时同步一次，之后每 10 分钟一次
     setInterval(() => sync.run(), SYNC_INTERVAL_MS);
-    // 主动提醒：收集待办，之后每分钟判断一次现在该不该开口
-    await todos.load();
-    await nudges.load();
+    // 主动提醒：补收最近几天的待办，之后每分钟判断一次现在该不该开口
     await collectRecentTodos();
     setInterval(() => {
       nudges.tick();

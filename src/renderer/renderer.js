@@ -14,6 +14,13 @@ const STATUS_LABEL = {
   skipped: ['未分析', ''],
 };
 
+/** 分钟数 -> “45 分钟” / “2 小时” / “2 小时 5 分”。各个页面都用这一个，保证同一个时长到处写法一样 */
+function formatMinutes(minutes) {
+  const m = Math.round(minutes || 0);
+  if (m < 60) return `${m} 分钟`;
+  return m % 60 ? `${Math.floor(m / 60)} 小时 ${m % 60} 分` : `${m / 60} 小时`;
+}
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;

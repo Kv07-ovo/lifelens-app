@@ -11,10 +11,7 @@ let calYear = yesterday.getFullYear();
 let calMonth = yesterday.getMonth() + 1;
 let diaryToken = 0;
 
-function minutesLabel(minutes) {
-  if (minutes < 60) return `${minutes} 分钟`;
-  return minutes % 60 ? `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分钟` : `${minutes / 60} 小时`;
-}
+const minutesLabel = formatMinutes; // 共用 renderer.js 里的实现
 
 /* ---------- 日历 ---------- */
 
